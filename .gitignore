@@ -1,0 +1,21 @@
+﻿# Build outputs
+forge-port/.gradle/
+forge-port/build/
+forge-port/bin/
+forge-port/logs/
+forge-port/tmp/
+forge-port/run/
+forge-port/gradlehome/
+forge-port-api/.gradle/
+forge-port-api/build/
+forge-port-api/bin/
+forge-port-api/logs/
+forge-port-api/tmp/
+forge-port-api/gradlehome/
+
+# IDE / OS
+*.bak
+*.iml
+.idea/
+.vscode/
+*.class

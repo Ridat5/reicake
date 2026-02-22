@@ -1,0 +1,12 @@
+Project: ReiParticleSkill Forge Workspace
+
+Author: Reiasu
+License: LGPL-3.0
+
+Modules:
+1. ReiParticleSkill   - Forge 1.20.1 particle effects mod
+2. ReiParticlesAPI    - Particle system API
+
+Trademark notice:
+- Minecraft is a trademark of Mojang Studios.
+- This project is community-maintained and not endorsed by Mojang Studios.

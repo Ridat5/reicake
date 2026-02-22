@@ -1,0 +1,155 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0.36,6.2)'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+// Merged dev output for the reiparticlesapi module.
+// Combines API classes + resources into one directory so Forge discovers it as a mod.
+def reiApiMergedDir = file("${buildDir}/reiapi-dev")
+
+// Source set whose output points to the merged dir. No actual compilation —
+// the Sync task (prepareReiApiDev) populates reiApiMergedDir instead.
+sourceSets {
+    reiapi {
+        java.srcDirs = []
+        resources.srcDirs = []
+    }
+}
+sourceSets.reiapi.output.resourcesDir = reiApiMergedDir
+
+minecraft {
+    mappings channel: 'official', version: minecraft_version
+
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+                reiparticlesapi {
+                    source sourceSets.reiapi
+                }
+            }
+        }
+
+        client {}
+
+        server {
+            args '--nogui'
+        }
+
+        data {
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    maven { url = 'https://maven.minecraftforge.net' }
+    mavenCentral()
+}
+
+def reiParticlesApiJarCandidates = [
+        // Prefer local dev jar first for test/dev runtime; install-dir jar may be reobfuscated.
+        file('../forge-port-api/build/libs/reiparticlesapi-1.0-SNAPSHOT-forge-port.jar'),
+]
+def reiParticlesApiJar = reiParticlesApiJarCandidates.find { it.exists() }
+if (reiParticlesApiJar == null) {
+    throw new GradleException("Missing reiparticlesapi jar. Expected one of: ${reiParticlesApiJarCandidates}")
+}
+def reiParticlesApiDevOutputs = [
+        file('../forge-port-api/build/classes/java/main'),
+        file('../forge-port-api/build/resources/main')
+]
+def hasReiParticlesApiDevOutputs = reiParticlesApiDevOutputs.every { it.exists() }
+
+// Sync task: merge API classes + processed resources into a single directory for dev runtime
+tasks.register('prepareReiApiDev', Sync) {
+    from '../forge-port-api/build/classes/java/main'
+    from '../forge-port-api/build/resources/main'
+    into reiApiMergedDir
+}
+['runClient', 'runServer', 'runData'].each { taskName ->
+    tasks.matching { it.name == taskName }.configureEach { dependsOn 'prepareReiApiDev' }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    compileOnly files(hasReiParticlesApiDevOutputs ? reiParticlesApiDevOutputs : [reiParticlesApiJar])
+    testImplementation files(hasReiParticlesApiDevOutputs ? reiParticlesApiDevOutputs : [reiParticlesApiJar])
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+processResources {
+    var replaceProperties = [
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            loader_version_range   : loader_version_range,
+            minecraft_version_range: minecraft_version_range
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml']) {
+        expand replaceProperties
+    }
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    // Prevent obfuscated API jar from shadowing deobf classes during unit tests.
+    classpath = classpath.filter { it != reiParticlesApiJar }
+}
+
+jar {
+    manifest {
+        attributes([
+                'Specification-Title'     : mod_name,
+                'Specification-Vendor'    : 'reiasu',
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.version,
+                'Implementation-Vendor'   : 'reiasu'
+        ])
+    }
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            artifact jar
+        }
+    }
+    repositories {
+        maven {
+            url "file://${project.projectDir}/repo"
+        }
+    }
+}
