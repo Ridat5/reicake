@@ -11,7 +11,7 @@ terms of each dependency.
 - **Artifact:** `io.github.classgraph:classgraph:4.8.174`
 - **License:** MIT
 - **Homepage:** https://github.com/classgraph/classgraph
-- **Used by:** `forge-port-api` (runtime classpath scanning)
+- **Used by:** `forge-port` (bundled ReiParticlesAPI runtime and classpath scanning)
 
 MIT License
 
@@ -42,7 +42,7 @@ SOFTWARE.
 - **Artifact:** `net.minecraftforge:forge:1.20.1-47.2.0`
 - **License:** LGPL-2.1-only (Forge), Minecraft EULA (Mojang)
 - **Homepage:** https://minecraftforge.net
-- **Note:** Forge is a modding platform; it is not bundled in the output jars.
+- **Note:** Forge is a modding platform; it is not bundled in the output jar.
   Minecraft is proprietary software owned by Mojang Studios / Microsoft.
   Forge's license has varied across versions; LGPL-2.1 is a simplified
   description for the 1.20.x era. See Forge's own LICENSE for authoritative terms.
@@ -60,6 +60,6 @@ SOFTWARE.
 
 *This file is informational and does not constitute legal advice.*
 
-*Maintainer note: If any third-party library is shaded/bundled into the
+*Maintainer note: If any third-party library is shaded or bundled into the
 output jar in the future, its license and copyright notice must be added
 to this file and included in the jar's `META-INF/` directory.*

@@ -10,11 +10,4 @@ plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
 }
 
-rootProject.name = 'reiparticleskill-forge-port'
-
-// Composite build: resolve forge-port-api from the sibling project instead of a pre-built jar.
-includeBuild('../forge-port-api') {
-    dependencySubstitution {
-        substitute module('com.reiasu.reiparticlesapi:reiparticlesapi') using project(':')
-    }
-}
+rootProject.name = 'reiparticleskill'

@@ -4,14 +4,10 @@
 
 A Minecraft Forge 1.20.1 particle effects mod featuring custom Ender Dragon respawn animations and visual effects.
 
-## Modules
+## Project Layout
 
-| Module | Description | Output Jar |
-|--------|-------------|------------|
-| `forge-port/` | ReiParticleSkill — main mod | `reiparticleskill-1.0-SNAPSHOT-forge-port.jar` |
-| `forge-port-api/` | ReiParticlesAPI — runtime library | `reiparticlesapi-1.0-SNAPSHOT-forge-port.jar` |
-
-Both jars must be placed in the `mods/` folder.
+The workspace now builds a single Gradle module in `forge-port/`.
+That jar bundles the former `ReiParticlesAPI` runtime, so only one output jar is produced.
 
 ## Requirements
 
@@ -22,16 +18,16 @@ Both jars must be placed in the `mods/` folder.
 ## Building
 
 ```bash
-# API module
-cd forge-port-api
-.\gradlew build
-
-# Main mod
 cd forge-port
 .\gradlew build
 ```
 
-Jars are output to `build/libs/` in each module.
+Or run `build.cmd` from the repository root.
+
+Output jar:
+`forge-port/build/libs/reiparticleskill-1.0-SNAPSHOT-forge-port.jar`
+
+Place that single jar in the `mods/` folder.
 
 ## Development
 
@@ -46,17 +42,13 @@ This project is licensed under **LGPL-3.0-only**. See `LICENSE`, `ATTRIBUTION.md
 
 ### For Modpack Authors / Players
 
-- **Modpack distribution is allowed** — just keep the original `LICENSE` and `NOTICE` files
-  bundled with the mod jar intact. Do not prevent users from replacing or updating this mod.
-- If you redistribute the jar, also provide a link to the corresponding source code
-  (repository URL + version tag or commit hash).
-- You do **not** need to open-source your modpack or other mods just because you include this one.
+- Keep the original `LICENSE` and `NOTICE` files bundled with the jar intact.
+- If you redistribute the jar, also provide a link to the corresponding source code.
+- You do not need to open-source your modpack or other mods just because you include this one.
 
 ### For Mod Developers
 
-- You may depend on `ReiParticlesAPI` without your mod becoming LGPL, as long as users can
-  replace the API jar independently (which is the default in Forge's `mods/` folder).
-- If you **modify and redistribute** this mod's source code, you must make your changes
-  available under LGPL-3.0 and clearly mark what you changed.
+- `ReiParticlesAPI` is now bundled into the same source module and jar as `ReiParticleSkill`.
+- If you modify and redistribute this project's source code, publish those changes under LGPL-3.0 and mark them clearly.
 
 *The above is a simplified summary, not legal advice. See the full license texts for authoritative terms.*

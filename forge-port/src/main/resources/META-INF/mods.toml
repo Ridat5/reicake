@@ -10,7 +10,8 @@ displayTest="IGNORE_ALL_VERSION"
 authors="Reiasu"
 description='''
 ReiParticleSkill gameplay module for Forge 1.20.x.
-End dragon respawn effects, display and railgun commands run through ReiParticlesAPI runtime.
+Includes the bundled ReiParticlesAPI runtime in a single jar.
+End dragon respawn effects, display and railgun commands run through the integrated runtime.
 '''
 
 [[dependencies.${mod_id}]]
@@ -34,6 +35,30 @@ versionRange="[0,)"
 ordering="AFTER"
 side="BOTH"
 
+[[mods]]
+modId="reiparticlesapi"
+version="${mod_version}"
+displayName="ReiParticlesAPI"
+displayTest="IGNORE_ALL_VERSION"
+authors="Reiasu"
+description='''
+Bundled runtime services for ReiParticleSkill on Forge 1.20.x.
+Includes animation, emitter, display and test lifecycle services inside the main jar.
+'''
+
+[[dependencies.reiparticlesapi]]
+modId="forge"
+mandatory=true
+versionRange="${loader_version_range}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.reiparticlesapi]]
+modId="minecraft"
+mandatory=true
+versionRange="${minecraft_version_range}"
+ordering="NONE"
+side="BOTH"
 
 [[mixins]]
 config="reiparticleskill.mixins.json"

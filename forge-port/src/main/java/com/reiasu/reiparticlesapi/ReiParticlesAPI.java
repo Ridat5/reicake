@@ -12,33 +12,23 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * Main entry point for the ReiParticles API.
- * <p>
+ *
  * Provides lifecycle management (initialization, scanner loading, hook registration),
  * a {@link com.reiasu.reiparticlesapi.scheduler.ReiScheduler ReiScheduler} for deferred tasks,
  * and convenience methods for the {@link com.reiasu.reiparticlesapi.event.ReiEventBus ReiEventBus}
  * event system.
- * <p>
- * Typical mod integration:
- * <pre>{@code
- * // During mod construction
- * ReiParticlesAPI.init();
- *
- * // Register event listener packages (scanned via ClassGraph)
- * ReiParticlesAPI.INSTANCE.appendEventListenerTarget("mymod", "com.example.mymod.listeners");
- * ReiParticlesAPI.INSTANCE.initEventListeners();
- *
- * // Schedule a deferred task (20 ticks = 1 second)
- * ReiParticlesAPI.reiScheduler().runTask(20, () -> { ... });
- * }</pre>
  */
 public final class ReiParticlesAPI {
     public static final ReiParticlesAPI INSTANCE = new ReiParticlesAPI();
-    /** @deprecated Use {@link #reiScheduler()} for new code. This scheduler only supports one-shot server tasks. */
+    /** @deprecated Use {@link #reiScheduler()} for new code. */
     @Deprecated
-    public static final Scheduler scheduler = new Scheduler();
+    public static final Scheduler scheduler = new Scheduler(true);
     private static final Logger LOGGER = LogUtils.getLogger();
     private static boolean initialized;
     private static boolean scannersLoaded;
@@ -50,7 +40,7 @@ public final class ReiParticlesAPI {
     /** Initializes the API. Safe to call multiple times; only the first call takes effect. */
     public static void init() {
         if (initialized) {
-            LOGGER.debug("init() called again — already initialized, skipping");
+            LOGGER.debug("init() called again; already initialized, skipping");
             return;
         }
         initialized = true;
@@ -66,12 +56,12 @@ public final class ReiParticlesAPI {
     /** Scans and initializes event listener packages. Call once after all listener targets are registered. */
     public void loadScannerPackages() {
         if (scannersLoaded) {
-            LOGGER.debug("loadScannerPackages() called again — already loaded, skipping");
+            LOGGER.debug("loadScannerPackages() called again; already loaded, skipping");
             return;
         }
         scannersLoaded = true;
         if (!initialized) {
-            LOGGER.warn("loadScannerPackages() called before init() — call init() first");
+            LOGGER.warn("loadScannerPackages() called before init(); call init() first");
         }
         LOGGER.info("ReiParticlesAPI scanner packages loaded");
         ReiEventBus.INSTANCE.initListeners();
@@ -82,7 +72,9 @@ public final class ReiParticlesAPI {
     }
 
     public void registerTest() {
-        if (testHooksRegistered) return;
+        if (testHooksRegistered) {
+            return;
+        }
         testHooksRegistered = true;
         TestManager.INSTANCE.register("api-test-group-builder", user -> buildSmokeTestGroup(user));
         LOGGER.info("ReiParticlesAPI test hooks registered");
@@ -94,10 +86,7 @@ public final class ReiParticlesAPI {
 
     /**
      * Registers a package for {@link com.reiasu.reiparticlesapi.annotations.events.EventListener @EventListener}
-     * class scanning. The package is scanned via ClassGraph when {@link #initEventListeners()} is called.
-     *
-     * @param modId       the mod identifier
-     * @param packageName fully-qualified package name to scan (e.g. {@code "com.example.mymod.listeners"})
+     * class scanning.
      */
     public void appendEventListenerTarget(String modId, String packageName) {
         ReiEventBus.INSTANCE.appendListenerTarget(modId, packageName);
@@ -106,28 +95,17 @@ public final class ReiParticlesAPI {
     /** Initializes all registered event listeners. Call after all targets have been appended. */
     public void initEventListeners() {
         if (!scannersLoaded) {
-            LOGGER.debug("initEventListeners() called before loadScannerPackages() — Forge scanning is a no-op, listeners must be registered explicitly");
+            LOGGER.debug("initEventListeners() called before loadScannerPackages(); listeners must be registered explicitly");
         }
         ReiEventBus.INSTANCE.initListeners();
     }
 
-    /**
-     * Manually registers a single event listener instance.
-     *
-     * @param modId    the mod identifier
-     * @param listener the listener object (must have methods annotated with event handler annotations)
-     */
+    /** Manually registers a single event listener instance. */
     public void registerEventListener(String modId, Object listener) {
         ReiEventBus.INSTANCE.registerListenerInstance(modId, listener);
     }
 
-    /**
-     * Fires an event through the {@link com.reiasu.reiparticlesapi.event.ReiEventBus ReiEventBus}.
-     *
-     * @param event the event to dispatch
-     * @param <T>   event type
-     * @return the same event instance (may have been modified by listeners)
-     */
+    /** Fires an event through the {@link com.reiasu.reiparticlesapi.event.ReiEventBus ReiEventBus}. */
     public <T extends ReiEvent> T callEvent(T event) {
         return ReiEventBus.call(event);
     }
@@ -135,33 +113,68 @@ public final class ReiParticlesAPI {
     /**
      * Returns the primary scheduler. Supports one-shot, repeating, max-tick,
      * cancel predicates, and finish callbacks. Ticked on both server and client.
-     *
-     * @see com.reiasu.reiparticlesapi.scheduler.ReiScheduler
      */
     public static ReiScheduler reiScheduler() {
         return ReiScheduler.INSTANCE;
     }
 
     /**
-     * Legacy scheduler stub that delegates all calls to {@link ReiScheduler}.
+     * Legacy scheduler compatibility layer.
      *
-     * @deprecated Use {@link #reiScheduler()} instead. This class is a thin delegate
-     *             and will be removed in a future version.
+     * The shared {@link #scheduler} instance still delegates to {@link ReiScheduler} so runtime callers keep
+     * their current behavior. Ad-hoc instances created in tests keep a local queue and advance on {@link #tick()}.
+     *
+     * @deprecated Use {@link #reiScheduler()} instead.
      */
     @Deprecated
     public static final class Scheduler {
+        private final boolean delegateToGlobal;
+        private final List<ScheduledTask> localTasks = new ArrayList<>();
+        private int currentTick;
 
-        /** Delegates to {@link ReiScheduler#runTask(int, Runnable)}. */
+        public Scheduler() {
+            this(false);
+        }
+
+        private Scheduler(boolean delegateToGlobal) {
+            this.delegateToGlobal = delegateToGlobal;
+        }
+
+        /** Schedules a one-shot task after the given number of ticks. */
         public void runTask(int ticks, Runnable task) {
-            ReiScheduler.INSTANCE.runTask(Math.max(1, ticks), task);
+            int delay = Math.max(1, ticks);
+            if (delegateToGlobal) {
+                ReiScheduler.INSTANCE.runTask(delay, task);
+                return;
+            }
+            localTasks.add(new ScheduledTask(currentTick + delay, task));
         }
 
-        /** No-op — {@link ReiScheduler} is ticked by the API tick handler. */
+        /** Advances legacy local tasks or delegates to the global scheduler. */
         public void tick() {
+            if (delegateToGlobal) {
+                ReiScheduler.INSTANCE.doTick();
+                return;
+            }
+            currentTick++;
+            Iterator<ScheduledTask> iterator = localTasks.iterator();
+            while (iterator.hasNext()) {
+                ScheduledTask task = iterator.next();
+                if (task.executionTick <= currentTick) {
+                    task.action.run();
+                    iterator.remove();
+                }
+            }
         }
 
-        /** No-op — lifecycle managed by {@link ReiScheduler}. */
+        /** Clears local legacy tasks. The global scheduler lifecycle stays managed elsewhere. */
         public void shutdown() {
+            if (!delegateToGlobal) {
+                localTasks.clear();
+            }
+        }
+
+        private record ScheduledTask(int executionTick, Runnable action) {
         }
     }
 
