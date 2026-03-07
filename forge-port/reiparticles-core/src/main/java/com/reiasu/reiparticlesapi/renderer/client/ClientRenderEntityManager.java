@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Reiasu
 package com.reiasu.reiparticlesapi.renderer.client;
 
+import com.mojang.logging.LogUtils;
 import com.reiasu.reiparticlesapi.renderer.RenderEntity;
 import net.minecraft.resources.ResourceLocation;
+import org.slf4j.Logger;
 
+import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,11 +21,13 @@ import java.util.function.Function;
  */
 public final class ClientRenderEntityManager {
     public static final ClientRenderEntityManager INSTANCE = new ClientRenderEntityManager();
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private final ConcurrentHashMap<UUID, RenderEntity> entities = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ResourceLocation, Function<byte[], RenderEntity>> codecs = new ConcurrentHashMap<>();
 
-    private ClientRenderEntityManager() {}
+    private ClientRenderEntityManager() {
+    }
 
     public ConcurrentHashMap<UUID, RenderEntity> getEntities() {
         return entities;
@@ -37,7 +42,9 @@ public final class ClientRenderEntityManager {
     }
 
     public void add(RenderEntity entity) {
-        if (entity == null) return;
+        if (entity == null) {
+            return;
+        }
         entities.put(entity.getUuid(), entity);
     }
 
@@ -63,11 +70,24 @@ public final class ClientRenderEntityManager {
      * Called every client tick. Ticks all visible render entities and removes canceled ones.
      */
     public void doClientTick() {
-        entities.entrySet().removeIf(entry -> {
+        Iterator<Map.Entry<UUID, RenderEntity>> iterator = entities.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, RenderEntity> entry = iterator.next();
             RenderEntity entity = entry.getValue();
-            if (entity.getCanceled()) return true;
-            entity.tick();
-            return false;
-        });
+            if (entity.getCanceled()) {
+                iterator.remove();
+                continue;
+            }
+            try {
+                entity.tick();
+            } catch (Exception e) {
+                LOGGER.warn("Render entity {} ({}) failed during client tick; removing entity",
+                        entity.getUuid(), entity.getClass().getName(), e);
+                entity.setCanceled(true);
+            }
+            if (entity.getCanceled()) {
+                iterator.remove();
+            }
+        }
     }
 }

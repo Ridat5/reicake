@@ -20,8 +20,8 @@ package com.reiasu.reiparticleskill.end.respawn;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 class EndRespawnWatcherTest {
 
     // --- Basic tick-only fallback (no crystal info) ---
@@ -88,4 +88,3 @@ class EndRespawnWatcherTest {
         assertTrue(EndRespawnWatcher.PHASE_SUMMONING_DRAGON_END < EndRespawnWatcher.PHASE_BEFORE_END_END);
     }
 }
-

@@ -16,7 +16,6 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
-import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -37,7 +36,6 @@ public final class ClientParticleGroupPacketHandler {
         }
     }
 
-    @SuppressWarnings("unchecked")
     static void handleCreate(UUID groupUUID, Map<String, ParticleControllerDataBuffer<?>> args, Logger logger) {
         Object posObj = readValue(args, PacketParticleGroupS2C.PacketArgsType.POS.getOfArgs());
         if (!(posObj instanceof Vec3 pos)) {
@@ -50,22 +48,17 @@ public final class ClientParticleGroupPacketHandler {
         }
 
         Object typeObj = readValue(args, PacketParticleGroupS2C.PacketArgsType.GROUP_TYPE.getOfArgs());
-        if (!(typeObj instanceof String typeName)) {
+        if (!(typeObj instanceof String typeName) || typeName.isBlank()) {
+            return;
+        }
+
+        ControllableParticleGroupProvider provider = ClientParticleGroupManager.INSTANCE.getBuilder(typeName);
+        if (provider == null) {
+            logger.warn("Rejected deprecated particle group {} with unregistered client type {}", groupUUID, typeName);
             return;
         }
 
         try {
-            Class<?> rawClass = Class.forName(typeName);
-            if (!ControllableParticleGroup.class.isAssignableFrom(rawClass)) {
-                return;
-            }
-            Class<? extends ControllableParticleGroup> groupClass = (Class<? extends ControllableParticleGroup>) rawClass;
-
-            ControllableParticleGroupProvider provider = ClientParticleGroupManager.INSTANCE.getBuilder(groupClass);
-            if (provider == null) {
-                return;
-            }
-
             ControllableParticleGroup group = provider.createGroup(groupUUID, args);
             if (group == null) {
                 return;
@@ -131,14 +124,7 @@ public final class ClientParticleGroupPacketHandler {
         if (argKeys.contains(PacketParticleGroupS2C.PacketArgsType.INVOKE.getOfArgs())) {
             Object val = readValue(args, PacketParticleGroupS2C.PacketArgsType.INVOKE.getOfArgs());
             if (val instanceof String methodName) {
-                try {
-                    Method method = targetGroup.getClass().getDeclaredMethod(methodName);
-                    method.setAccessible(true);
-                    method.invoke(targetGroup);
-                } catch (Exception e) {
-                    logger.warn("Failed to invoke '{}' on particle group {} ({})",
-                            methodName, groupUUID, targetGroup.getClass().getName(), e);
-                }
+                rejectRemoteInvoke(methodName, groupUUID, targetGroup.getClass(), logger);
             }
         }
 
@@ -157,6 +143,11 @@ public final class ClientParticleGroupPacketHandler {
         if (builder != null) {
             builder.changeGroup(targetGroup, args);
         }
+    }
+
+    static void rejectRemoteInvoke(String methodName, UUID groupUUID, Class<?> targetType, Logger logger) {
+        logger.warn("Rejected deprecated remote invoke '{}' on particle group {} ({})",
+                methodName, groupUUID, targetType.getName());
     }
 
     private static void handleRemove(UUID groupUUID) {

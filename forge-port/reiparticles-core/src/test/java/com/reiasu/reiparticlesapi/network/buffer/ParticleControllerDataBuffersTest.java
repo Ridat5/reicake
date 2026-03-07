@@ -20,12 +20,17 @@ package com.reiasu.reiparticlesapi.network.buffer;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ParticleControllerDataBuffersTest {
     @Test
@@ -70,5 +75,24 @@ class ParticleControllerDataBuffersTest {
         assertNotNull(decoded);
         assertArrayEquals(input, (int[]) decoded.getLoadedValue());
     }
-}
 
+    @Test
+    void shouldRejectUnknownBufferIdsFromNetworkPayload() throws IOException {
+        byte[] encoded = envelope("reiparticlesapi:missing_buffer", new byte[]{1, 2, 3});
+
+        assertThrows(IllegalStateException.class, () -> ParticleControllerDataBuffers.INSTANCE.decodeToBuffer(encoded));
+    }
+
+    private static byte[] envelope(String id, byte[] payload) throws IOException {
+        try (ByteArrayOutputStream raw = new ByteArrayOutputStream();
+             DataOutputStream output = new DataOutputStream(raw)) {
+            byte[] idBytes = id.getBytes(StandardCharsets.UTF_8);
+            output.writeInt(idBytes.length);
+            output.write(idBytes);
+            output.writeInt(payload.length);
+            output.write(payload);
+            output.flush();
+            return raw.toByteArray();
+        }
+    }
+}

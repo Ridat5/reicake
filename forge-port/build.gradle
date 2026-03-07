@@ -42,7 +42,7 @@ ext.configureJavaModule = { Project target, boolean allowThrowable, List<String>
         throwableCatchAllowlist.any { normalized.endsWith(it) }
     }
 
-    def collectStyleViolations = { FileTree tree ->
+    def collectFormatViolations = { FileTree tree ->
         def violations = []
         tree.files.sort().each { file ->
             def lines = file.readLines('UTF-8')
@@ -53,15 +53,6 @@ ext.configureJavaModule = { Project target, boolean allowThrowable, List<String>
                 if (line ==~ /.*\s+$/ && !line.trim().isEmpty()) {
                     violations << "${file}:${idx + 1}: trailing whitespace"
                 }
-                if (line ==~ /import\s+.*\.\*;/) {
-                    violations << "${file}:${idx + 1}: wildcard import"
-                }
-                if (line.contains('System.out.') || line.contains('printStackTrace(')) {
-                    violations << "${file}:${idx + 1}: debug console output"
-                }
-                if (!allowThrowable && line.contains('catch (Throwable') && !isThrowableCatchAllowed(file)) {
-                    violations << "${file}:${idx + 1}: catch(Throwable)"
-                }
             }
             if (file.length() > 0 && !file.getText('UTF-8').endsWith('\n')) {
                 violations << "${file}: missing trailing newline"
@@ -70,9 +61,31 @@ ext.configureJavaModule = { Project target, boolean allowThrowable, List<String>
         violations
     }
 
-    target.tasks.register('spotlessCheck') {
+    def collectJavaSourceViolations = { FileTree tree ->
+        def violations = []
+        tree.files.sort().each { file ->
+            def seenImports = new LinkedHashSet<String>()
+            file.readLines('UTF-8').eachWithIndex { line, idx ->
+                def trimmed = line.trim()
+                if (trimmed ==~ /import\s+.*;$/) {
+                    if (!seenImports.add(trimmed)) {
+                        violations << "${file}:${idx + 1}: duplicate import ${trimmed.substring('import '.length(), trimmed.length() - 1)}"
+                    }
+                }
+                if (line.contains('System.out.') || line.contains('printStackTrace(')) {
+                    violations << "${file}:${idx + 1}: debug console output"
+                }
+                if (!allowThrowable && line.contains('catch (Throwable') && !isThrowableCatchAllowed(file)) {
+                    violations << "${file}:${idx + 1}: catch(Throwable)"
+                }
+            }
+        }
+        violations
+    }
+
+    target.tasks.register('formatSanityCheck') {
         group = 'verification'
-        description = "Checks basic formatting invariants for ${target.path} without mutating files."
+        description = "Checks formatting invariants for ${target.path} without mutating files."
         doLast {
             def trees = [
                     target.fileTree('src/main/java') { include '**/*.java' },
@@ -86,53 +99,39 @@ ext.configureJavaModule = { Project target, boolean allowThrowable, List<String>
                 trees.add(target.files('gradle.properties').asFileTree)
             }
             def violations = []
-            trees.each { tree ->
-                violations.addAll(collectStyleViolations(tree).findAll {
-                    !it.contains('wildcard import') && !it.contains('debug console output')
-                })
-            }
+            trees.each { tree -> violations.addAll(collectFormatViolations(tree)) }
             if (!violations.isEmpty()) {
-                throw new GradleException("${target.path}:spotlessCheck failed:\n" + violations.join('\n'))
+                throw new GradleException("${target.path}:formatSanityCheck failed:\n" + violations.join('\n'))
             }
         }
     }
 
-    target.tasks.register('checkstyleMain') {
+    target.tasks.register('javaSourceSanityMain') {
         group = 'verification'
-        description = "Checks main-source style rules for ${target.path}."
+        description = "Checks main-source sanity rules for ${target.path}."
         doLast {
-            def violations = collectStyleViolations(target.fileTree('src/main/java') { include '**/*.java' }).findAll {
-                !it.contains('tab character')
-                        && !it.contains('trailing whitespace')
-                        && !it.contains('missing trailing newline')
-                        && !it.contains('wildcard import')
-            }
+            def violations = collectJavaSourceViolations(target.fileTree('src/main/java') { include '**/*.java' })
             if (!violations.isEmpty()) {
-                throw new GradleException("${target.path}:checkstyleMain failed:\n" + violations.join('\n'))
+                throw new GradleException("${target.path}:javaSourceSanityMain failed:\n" + violations.join('\n'))
             }
         }
     }
 
-    target.tasks.register('checkstyleTest') {
+    target.tasks.register('javaSourceSanityTest') {
         group = 'verification'
-        description = "Checks test-source style rules for ${target.path}."
+        description = "Checks test-source sanity rules for ${target.path}."
         doLast {
-            def violations = collectStyleViolations(target.fileTree('src/test/java') { include '**/*.java' }).findAll {
-                !it.contains('tab character')
-                        && !it.contains('trailing whitespace')
-                        && !it.contains('missing trailing newline')
-                        && !it.contains('wildcard import')
-            }
+            def violations = collectJavaSourceViolations(target.fileTree('src/test/java') { include '**/*.java' })
             if (!violations.isEmpty()) {
-                throw new GradleException("${target.path}:checkstyleTest failed:\n" + violations.join('\n'))
+                throw new GradleException("${target.path}:javaSourceSanityTest failed:\n" + violations.join('\n'))
             }
         }
     }
 
     target.tasks.named('check') {
-        dependsOn target.tasks.named('spotlessCheck'),
-                target.tasks.named('checkstyleMain'),
-                target.tasks.named('checkstyleTest')
+        dependsOn target.tasks.named('formatSanityCheck'),
+                target.tasks.named('javaSourceSanityMain'),
+                target.tasks.named('javaSourceSanityTest')
     }
 }
 
@@ -142,29 +141,29 @@ tasks.register('test') {
     dependsOn subprojects.collect { "${it.path}:test" }
 }
 
-tasks.register('spotlessCheck') {
+tasks.register('formatSanityCheck') {
     group = 'verification'
-    description = 'Runs spotlessCheck for all subprojects.'
-    dependsOn subprojects.collect { "${it.path}:spotlessCheck" }
+    description = 'Runs formatSanityCheck for all subprojects.'
+    dependsOn subprojects.collect { "${it.path}:formatSanityCheck" }
 }
 
-tasks.register('checkstyleMain') {
+tasks.register('javaSourceSanityMain') {
     group = 'verification'
-    description = 'Runs checkstyleMain for all subprojects.'
-    dependsOn subprojects.collect { "${it.path}:checkstyleMain" }
+    description = 'Runs javaSourceSanityMain for all subprojects.'
+    dependsOn subprojects.collect { "${it.path}:javaSourceSanityMain" }
 }
 
-tasks.register('checkstyleTest') {
+tasks.register('javaSourceSanityTest') {
     group = 'verification'
-    description = 'Runs checkstyleTest for all subprojects.'
-    dependsOn subprojects.collect { "${it.path}:checkstyleTest" }
+    description = 'Runs javaSourceSanityTest for all subprojects.'
+    dependsOn subprojects.collect { "${it.path}:javaSourceSanityTest" }
 }
 
 tasks.named('check') {
     dependsOn tasks.named('test'),
-            tasks.named('spotlessCheck'),
-            tasks.named('checkstyleMain'),
-            tasks.named('checkstyleTest')
+            tasks.named('formatSanityCheck'),
+            tasks.named('javaSourceSanityMain'),
+            tasks.named('javaSourceSanityTest')
 }
 
 tasks.named('build') {

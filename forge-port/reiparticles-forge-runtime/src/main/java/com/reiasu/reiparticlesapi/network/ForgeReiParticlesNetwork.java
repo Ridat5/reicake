@@ -42,18 +42,25 @@ import java.util.function.Supplier;
 
 public final class ForgeReiParticlesNetwork {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final int PROTOCOL_VERSION = 1;
     private static int packetId = 0;
     private static boolean initialized;
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(new ResourceLocation(ReiParticlesConstants.MOD_ID, "main"))
-            .networkProtocolVersion(() -> Integer.toString(PROTOCOL_VERSION))
-            .clientAcceptedVersions(v -> true)
-            .serverAcceptedVersions(v -> true)
+            .networkProtocolVersion(ForgeReiParticlesProtocol::protocolVersion)
+            .clientAcceptedVersions(ForgeReiParticlesProtocol::isAcceptedProtocolVersion)
+            .serverAcceptedVersions(ForgeReiParticlesProtocol::isAcceptedProtocolVersion)
             .simpleChannel();
 
     private ForgeReiParticlesNetwork() {
+    }
+
+    static String protocolVersion() {
+        return ForgeReiParticlesProtocol.protocolVersion();
+    }
+
+    static boolean isAcceptedProtocolVersion(String version) {
+        return ForgeReiParticlesProtocol.isAcceptedProtocolVersion(version);
     }
 
     public static void init() {
@@ -130,5 +137,20 @@ public final class ForgeReiParticlesNetwork {
             LOGGER.debug("Failed to send packet {} to {}: {}",
                     packet.getClass().getSimpleName(), player.getName().getString(), e.getMessage());
         }
+    }
+}
+
+final class ForgeReiParticlesProtocol {
+    private static final String PROTOCOL_VERSION = "2";
+
+    private ForgeReiParticlesProtocol() {
+    }
+
+    static String protocolVersion() {
+        return PROTOCOL_VERSION;
+    }
+
+    static boolean isAcceptedProtocolVersion(String version) {
+        return PROTOCOL_VERSION.equals(version);
     }
 }

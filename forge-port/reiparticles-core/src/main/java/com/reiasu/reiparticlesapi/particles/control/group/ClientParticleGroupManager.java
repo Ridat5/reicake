@@ -5,7 +5,6 @@ package com.reiasu.reiparticlesapi.particles.control.group;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,16 +22,23 @@ public final class ClientParticleGroupManager {
     public static final ClientParticleGroupManager INSTANCE = new ClientParticleGroupManager();
 
     private final ConcurrentHashMap<UUID, ControllableParticleGroup> visibleControls = new ConcurrentHashMap<>();
-    private final HashMap<Class<? extends ControllableParticleGroup>, ControllableParticleGroupProvider> registerBuilders = new HashMap<>();
+    private final Map<Class<? extends ControllableParticleGroup>, ControllableParticleGroupProvider> registerBuilders = new ConcurrentHashMap<>();
+    private final Map<String, ControllableParticleGroupProvider> registerBuildersByName = new ConcurrentHashMap<>();
 
-    private ClientParticleGroupManager() {}
+    private ClientParticleGroupManager() {
+    }
 
     public void register(Class<? extends ControllableParticleGroup> type, ControllableParticleGroupProvider provider) {
         registerBuilders.put(type, provider);
+        registerBuildersByName.put(type.getName(), provider);
     }
 
     public ControllableParticleGroupProvider getBuilder(Class<? extends ControllableParticleGroup> type) {
         return registerBuilders.get(type);
+    }
+
+    public ControllableParticleGroupProvider getBuilder(String typeName) {
+        return registerBuildersByName.get(typeName);
     }
 
     public ControllableParticleGroup getControlGroup(UUID groupId) {

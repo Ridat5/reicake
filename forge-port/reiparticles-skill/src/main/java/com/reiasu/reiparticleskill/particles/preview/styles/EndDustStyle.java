@@ -4,13 +4,9 @@ package com.reiasu.reiparticleskill.particles.preview.styles;
 
 import com.reiasu.reiparticlesapi.annotations.ReiAutoRegister;
 import com.reiasu.reiparticlesapi.network.buffer.ParticleControllerDataBuffer;
-import com.reiasu.reiparticlesapi.annotations.ReiAutoRegister;
 import com.reiasu.reiparticlesapi.network.buffer.ParticleControllerDataBuffers;
-import com.reiasu.reiparticlesapi.annotations.ReiAutoRegister;
 import com.reiasu.reiparticlesapi.network.particle.style.ParticleGroupStyle;
-import com.reiasu.reiparticlesapi.annotations.ReiAutoRegister;
 import com.reiasu.reiparticlesapi.network.particle.style.ParticleStyleProvider;
-import com.reiasu.reiparticlesapi.annotations.ReiAutoRegister;
 import com.reiasu.reiparticlesapi.utils.RelativeLocation;
 import com.reiasu.reiparticlesapi.utils.GraphMathHelper;
 import net.minecraft.core.particles.DustParticleOptions;

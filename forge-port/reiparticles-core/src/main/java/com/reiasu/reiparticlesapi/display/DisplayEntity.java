@@ -127,6 +127,10 @@ public abstract class DisplayEntity implements ServerController<DisplayEntity> {
         return null;
     }
 
+    public double getVisibleRange() {
+        return 128.0;
+    }
+
     public byte[] encodeToBytes() {
         return new byte[0];
     }

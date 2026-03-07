@@ -11,8 +11,11 @@ import io.github.classgraph.ScanResult;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
+import java.util.NavigableMap;
+import java.util.NavigableSet;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
@@ -26,9 +29,9 @@ public final class ReiAPIScanner {
     public static final ReiAPIScanner INSTANCE = new ReiAPIScanner();
     private static final org.slf4j.Logger LOGGER = LogUtils.getLogger();
 
-    private final HashSet<String> scanPackages = new HashSet<>();
+    private final NavigableSet<String> scanPackages = new TreeSet<>();
     private boolean loaded = false;
-    private final HashSet<SimpleClassInfo> classes = new HashSet<>();
+    private final NavigableMap<String, SimpleClassInfo> classes = new TreeMap<>();
 
     private ReiAPIScanner() {
     }
@@ -55,10 +58,10 @@ public final class ReiAPIScanner {
 
                 for (ClassInfo ci : allClasses) {
                     String className = ci.getName();
-                    HashSet<String> annotationNames = ci.getAnnotations().stream()
+                    java.util.HashSet<String> annotationNames = ci.getAnnotations().stream()
                             .map(ClassInfo::getName)
-                            .collect(Collectors.toCollection(HashSet::new));
-                    classes.add(new SimpleClassInfo(className, annotationNames));
+                            .collect(Collectors.toCollection(java.util.HashSet::new));
+                    classes.put(className, new SimpleClassInfo(className, annotationNames));
                 }
             }
 
@@ -75,7 +78,7 @@ public final class ReiAPIScanner {
      */
     public Collection<SimpleClassInfo> getWithAnnotation(Class<? extends Annotation> anno) {
         List<SimpleClassInfo> out = new ArrayList<>();
-        for (SimpleClassInfo info : classes) {
+        for (SimpleClassInfo info : classes.values()) {
             if (info.isAnnotationPresent(anno)) {
                 out.add(info);
             }
@@ -88,7 +91,7 @@ public final class ReiAPIScanner {
      */
     public Collection<Class<?>> getClassesWithAnnotation(Class<? extends Annotation> anno) {
         List<Class<?>> out = new ArrayList<>();
-        for (SimpleClassInfo info : classes) {
+        for (SimpleClassInfo info : classes.values()) {
             if (info.isAnnotationPresent(anno)) {
                 try {
                     out.add(info.toClass());
@@ -104,7 +107,7 @@ public final class ReiAPIScanner {
      * Manually add a scan result (used internally during scan, or for testing).
      */
     public void inputScanResult(SimpleClassInfo scanResult) {
-        classes.add(scanResult);
+        classes.put(scanResult.getType(), scanResult);
     }
 
     /**
@@ -141,4 +144,3 @@ public final class ReiAPIScanner {
         LOGGER.info("Registered scan package: {}", packageName);
     }
 }
-

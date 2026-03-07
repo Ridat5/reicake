@@ -2,6 +2,9 @@
 // Copyright (C) 2025 Reiasu
 package com.reiasu.reiparticlesapi.scheduler;
 
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Predicate;
 
@@ -13,6 +16,7 @@ import java.util.function.Predicate;
 public final class ReiScheduler {
 
     public static final ReiScheduler INSTANCE = new ReiScheduler();
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private final ConcurrentLinkedQueue<TickRunnable> serverTicks = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<TickRunnable> serverTaskQueue = new ConcurrentLinkedQueue<>();
@@ -28,14 +32,15 @@ public final class ReiScheduler {
     }
 
     public void doServerTick() {
-        doTick(serverTicks, serverTaskQueue);
+        doTick("server", serverTicks, serverTaskQueue);
     }
 
     public void doClientTick() {
-        doTick(clientTicks, clientTaskQueue);
+        doTick("client", clientTicks, clientTaskQueue);
     }
 
     private static void doTick(
+            String schedulerName,
             ConcurrentLinkedQueue<TickRunnable> activeTicks,
             ConcurrentLinkedQueue<TickRunnable> queuedTicks
     ) {
@@ -43,10 +48,15 @@ public final class ReiScheduler {
         while ((queued = queuedTicks.poll()) != null) {
             activeTicks.add(queued);
         }
-        activeTicks.removeIf(task -> {
-            task.doTick();
-            return task.isCancelled();
-        });
+        for (TickRunnable task : activeTicks) {
+            try {
+                task.doTick();
+            } catch (Exception e) {
+                LOGGER.warn("Scheduler {} task failed and was cancelled", schedulerName, e);
+                task.cancel();
+            }
+        }
+        activeTicks.removeIf(TickRunnable::isCancelled);
     }
 
     /** Schedule a one-shot task after {@code delay} ticks on the server scheduler. */
@@ -143,7 +153,11 @@ public final class ReiScheduler {
             }
             this.cancelled = true;
             if (finishCallback != null) {
-                finishCallback.run();
+                try {
+                    finishCallback.run();
+                } catch (Exception e) {
+                    LOGGER.warn("Scheduler finish callback threw and was ignored", e);
+                }
             }
         }
 

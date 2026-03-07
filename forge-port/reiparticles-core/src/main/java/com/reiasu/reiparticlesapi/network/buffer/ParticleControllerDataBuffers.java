@@ -13,6 +13,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,6 +34,7 @@ public final class ParticleControllerDataBuffers {
         wrapperToPrimitive.put(Float.class, float.class);
         wrapperToPrimitive.put(Boolean.class, boolean.class);
         wrapperToPrimitive.put(Short.class, short.class);
+        wrapperToPrimitive.put(Character.class, char.class);
 
         register(boolean.class, BooleanControllerBuffer.ID, BooleanControllerBuffer::new);
         register(long.class, LongControllerBuffer.ID, LongControllerBuffer::new);
@@ -46,6 +48,8 @@ public final class ParticleControllerDataBuffers {
         register(Vec3.class, Vec3dControllerBuffer.ID, Vec3dControllerBuffer::new);
         register(RelativeLocation.class, RelativeLocationControllerBuffer.ID, RelativeLocationControllerBuffer::new);
         register(short.class, ShortControllerBuffer.ID, ShortControllerBuffer::new);
+        register(char.class, CharControllerBuffer.ID, CharControllerBuffer::new);
+        register(List.class, NestedBuffersControllerBuffer.ID, NestedBuffersControllerBuffer::new);
         register(Void.class, EmptyControllerBuffer.ID, EmptyControllerBuffer::new);
     }
 
@@ -196,14 +200,12 @@ public final class ParticleControllerDataBuffers {
 
     public <T> byte[] encode(ParticleControllerDataBuffer<T> buffer) {
         byte[] payload = buffer.encode();
-        String className = buffer.getClass().getName();
-        return wrapPayload(className, payload);
+        return wrapPayload(requireRegisteredId(buffer).value().toString(), payload);
     }
 
     public <T> byte[] encode(T value, ParticleControllerDataBuffer<T> buffer) {
         byte[] payload = buffer.encode(value);
-        String className = buffer.getClass().getName();
-        return wrapPayload(className, payload);
+        return wrapPayload(requireRegisteredId(buffer).value().toString(), payload);
     }
 
     @SuppressWarnings("unchecked")
@@ -214,32 +216,42 @@ public final class ParticleControllerDataBuffers {
     @SuppressWarnings("unchecked")
     public <T> ParticleControllerDataBuffer<T> decodeToBuffer(byte[] bytes) {
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes))) {
-            int classLen = input.readInt();
-            byte[] classBytes = input.readNBytes(classLen);
-            String className = new String(classBytes, StandardCharsets.UTF_8);
+            int idLen = input.readInt();
+            byte[] idBytes = input.readNBytes(idLen);
+            if (idBytes.length != idLen) {
+                throw new IOException("Unexpected EOF while reading buffer id");
+            }
+            String bufferId = new String(idBytes, StandardCharsets.UTF_8);
             int payloadLen = input.readInt();
             byte[] payload = input.readNBytes(payloadLen);
-
-            Class<?> clazz = Class.forName(className);
-            if (!ParticleControllerDataBuffer.class.isAssignableFrom(clazz)) {
-                throw new IllegalStateException("Not a buffer class: " + className);
+            if (payload.length != payloadLen) {
+                throw new IOException("Unexpected EOF while reading buffer payload");
             }
-            ParticleControllerDataBuffer<?> instance = newInstance((Class<? extends ParticleControllerDataBuffer<?>>) clazz);
-            Object decoded = instance.decode(payload);
-            //noinspection rawtypes,unchecked
-            ((ParticleControllerDataBuffer) instance).setLoadedValue(decoded);
+
+            ParticleControllerDataBuffer<?> instance = withIdDecode(ParticleControllerDataBuffer.Id.toID(bufferId), payload);
+            if (instance == null) {
+                throw new IllegalStateException("Unknown buffer ID: " + bufferId);
+            }
             return (ParticleControllerDataBuffer<T>) instance;
-        } catch (IOException | ReflectiveOperationException e) {
+        } catch (IOException | RuntimeException e) {
             throw new IllegalStateException("Failed to decode buffer payload", e);
         }
     }
 
-    private static byte[] wrapPayload(String className, byte[] payload) {
+    private ParticleControllerDataBuffer.Id requireRegisteredId(ParticleControllerDataBuffer<?> buffer) {
+        ParticleControllerDataBuffer.Id id = buffer.getBufferID();
+        if (id == null || !registerBuilder.containsKey(id)) {
+            throw new IllegalStateException("Unregistered buffer ID: " + (id == null ? "<null>" : id.value()));
+        }
+        return id;
+    }
+
+    private static byte[] wrapPayload(String bufferId, byte[] payload) {
         try (ByteArrayOutputStream raw = new ByteArrayOutputStream();
-            DataOutputStream output = new DataOutputStream(raw)) {
-            byte[] classBytes = className.getBytes(StandardCharsets.UTF_8);
-            output.writeInt(classBytes.length);
-            output.write(classBytes);
+             DataOutputStream output = new DataOutputStream(raw)) {
+            byte[] idBytes = bufferId.getBytes(StandardCharsets.UTF_8);
+            output.writeInt(idBytes.length);
+            output.write(idBytes);
             output.writeInt(payload.length);
             output.write(payload);
             output.flush();

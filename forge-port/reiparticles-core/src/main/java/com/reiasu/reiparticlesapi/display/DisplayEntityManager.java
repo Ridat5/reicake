@@ -8,6 +8,7 @@ import com.reiasu.reiparticlesapi.network.packet.PacketDisplayEntityS2C;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -27,6 +29,7 @@ public final class DisplayEntityManager {
     private final Map<UUID, DisplayEntity> serverView = new ConcurrentHashMap<>();
     private final Map<UUID, DisplayEntity> clientView = new ConcurrentHashMap<>();
     private final Map<String, Function<FriendlyByteBuf, DisplayEntity>> registeredTypes = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<UUID>> visibleByPlayer = new ConcurrentHashMap<>();
     private volatile boolean builtinTypesRegistered;
 
     private DisplayEntityManager() {
@@ -46,6 +49,10 @@ public final class DisplayEntityManager {
 
     public Map<UUID, DisplayEntity> getClientView() {
         return clientView;
+    }
+
+    Map<UUID, Set<UUID>> getVisibleByPlayer() {
+        return visibleByPlayer;
     }
 
     public Map<String, Function<FriendlyByteBuf, DisplayEntity>> getRegisteredTypes() {
@@ -104,6 +111,9 @@ public final class DisplayEntityManager {
                 }
             }
         }
+        if (serverView.isEmpty()) {
+            visibleByPlayer.clear();
+        }
     }
 
     public void tickClient() {
@@ -146,6 +156,7 @@ public final class DisplayEntityManager {
             displays.clear();
         }
         serverView.clear();
+        visibleByPlayer.clear();
         for (DisplayEntity display : clientView.values()) {
             display.cancel();
         }
@@ -158,21 +169,77 @@ public final class DisplayEntityManager {
         }
     }
 
+    static boolean isWithinVisibleRange(Vec3 displayPos, Vec3 viewerPos, double visibleRange) {
+        if (displayPos == null || viewerPos == null) {
+            return false;
+        }
+        return displayPos.distanceTo(viewerPos) <= Math.max(0.0, visibleRange);
+    }
+
     private void sync(DisplayEntity entity, PacketDisplayEntityS2C.Method method) {
         if (entity == null || entity.typeId() == null || entity.typeId().isBlank()) {
             return;
         }
         ServerLevel level = entity.level() instanceof ServerLevel serverLevel ? serverLevel : null;
+        if (method == PacketDisplayEntityS2C.Method.REMOVE) {
+            removeTrackedVisibility(entity, level);
+            return;
+        }
         if (level == null) {
             return;
         }
-        PacketDisplayEntityS2C packet = switch (method) {
-            case CREATE -> PacketDisplayEntityS2C.ofCreate(entity);
-            case TOGGLE -> PacketDisplayEntityS2C.ofToggle(entity);
-            case REMOVE -> PacketDisplayEntityS2C.ofRemove(entity);
-        };
+
+        PacketDisplayEntityS2C createPacket = PacketDisplayEntityS2C.ofCreate(entity);
+        PacketDisplayEntityS2C togglePacket = method == PacketDisplayEntityS2C.Method.TOGGLE
+                ? PacketDisplayEntityS2C.ofToggle(entity)
+                : createPacket;
+        UUID displayId = entity.getControlUUID();
+
         for (ServerPlayer player : level.players()) {
-            ReiParticlesNetwork.sendTo(player, packet);
+            Set<UUID> visibleSet = visibleByPlayer.computeIfAbsent(player.getUUID(), ignored -> ConcurrentHashMap.newKeySet());
+            boolean shouldView = canView(entity, player);
+            boolean alreadyVisible = visibleSet.contains(displayId);
+
+            if (!shouldView && alreadyVisible) {
+                visibleSet.remove(displayId);
+                ReiParticlesNetwork.sendTo(player, PacketDisplayEntityS2C.ofRemove(entity));
+                continue;
+            }
+            if (shouldView && !alreadyVisible) {
+                visibleSet.add(displayId);
+                ReiParticlesNetwork.sendTo(player, createPacket);
+                continue;
+            }
+            if (shouldView && method == PacketDisplayEntityS2C.Method.TOGGLE) {
+                ReiParticlesNetwork.sendTo(player, togglePacket);
+            }
         }
+    }
+
+    private void removeTrackedVisibility(DisplayEntity entity, ServerLevel level) {
+        UUID displayId = entity.getControlUUID();
+        PacketDisplayEntityS2C removePacket = PacketDisplayEntityS2C.ofRemove(entity);
+        for (Map.Entry<UUID, Set<UUID>> entry : visibleByPlayer.entrySet()) {
+            if (!entry.getValue().remove(displayId) || level == null) {
+                continue;
+            }
+            ServerPlayer player = level.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (player != null) {
+                ReiParticlesNetwork.sendTo(player, removePacket);
+            }
+        }
+    }
+
+    private static boolean canView(DisplayEntity entity, ServerPlayer player) {
+        if (entity == null || player == null || entity.level() == null) {
+            return false;
+        }
+        if (player.isRemoved() || player.isSpectator()) {
+            return false;
+        }
+        if (entity.level() != player.level()) {
+            return false;
+        }
+        return isWithinVisibleRange(entity.getPos(), player.position(), entity.getVisibleRange());
     }
 }

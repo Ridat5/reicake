@@ -24,7 +24,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -73,6 +75,40 @@ class ReiParticlesAPISchedulerTest {
         assertFalse(executed.get());
 
         ReiScheduler.INSTANCE.doServerTick();
+        assertTrue(executed.get());
+    }
+
+    @Test
+    void shouldCancelFailedGlobalTaskWithoutBlockingLaterTasks() {
+        AtomicInteger completedTasks = new AtomicInteger();
+        AtomicBoolean laterTaskExecuted = new AtomicBoolean(false);
+
+        ReiScheduler.INSTANCE.runTask(1, () -> {
+            throw new IllegalStateException("boom");
+        });
+        ReiScheduler.INSTANCE.runTask(1, completedTasks::incrementAndGet);
+        ReiScheduler.INSTANCE.runTask(2, () -> laterTaskExecuted.set(true));
+
+        ReiScheduler.INSTANCE.doServerTick();
+        assertEquals(1, completedTasks.get());
+        assertFalse(laterTaskExecuted.get());
+
+        ReiScheduler.INSTANCE.doServerTick();
+        assertTrue(laterTaskExecuted.get());
+    }
+
+    @Test
+    void shouldContinueLegacySchedulerAfterTaskFailure() {
+        ReiParticlesAPI.Scheduler scheduler = createScheduler();
+        AtomicBoolean executed = new AtomicBoolean(false);
+
+        scheduler.runTask(1, () -> {
+            throw new IllegalStateException("boom");
+        });
+        scheduler.runTask(1, () -> executed.set(true));
+
+        scheduler.tick();
+
         assertTrue(executed.get());
     }
 }

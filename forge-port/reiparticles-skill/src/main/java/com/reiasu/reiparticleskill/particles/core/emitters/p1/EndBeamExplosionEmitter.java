@@ -4,9 +4,7 @@ package com.reiasu.reiparticleskill.particles.core.emitters.p1;
 
 import com.reiasu.reiparticlesapi.annotations.ReiAutoRegister;
 import com.reiasu.reiparticlesapi.network.particle.emitters.AutoParticleEmitters;
-import com.reiasu.reiparticlesapi.annotations.ReiAutoRegister;
 import com.reiasu.reiparticlesapi.utils.RelativeLocation;
-import com.reiasu.reiparticlesapi.annotations.ReiAutoRegister;
 import com.reiasu.reiparticlesapi.utils.builder.PointsBuilder;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;

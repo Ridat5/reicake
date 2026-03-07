@@ -17,6 +17,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.function.Function;
 
 /**
@@ -40,17 +41,18 @@ public final class RuntimePortAutoRegistrar {
 
     @SuppressWarnings("unchecked")
     public static void registerAll(Logger logger, String... packages) {
-        int emitters = 0;
-        int styles = 0;
-
         for (String pkg : packages) {
             ReiAPIScanner.registerPackage(pkg);
         }
         ReiAPIScanner.INSTANCE.scan();
+        registerDiscoveredClasses(logger, ReiAPIScanner.INSTANCE.getClassesWithAnnotation(ReiAutoRegister.class));
+    }
 
-        Collection<Class<?>> annotated = ReiAPIScanner.INSTANCE.getClassesWithAnnotation(ReiAutoRegister.class);
+    static void registerDiscoveredClasses(Logger logger, Collection<Class<?>> annotated) {
+        int emitters = 0;
+        int styles = 0;
 
-        for (Class<?> clazz : annotated) {
+        for (Class<?> clazz : annotated.stream().sorted(Comparator.comparing(Class::getName)).toList()) {
             if (ParticleEmitters.class.isAssignableFrom(clazz)) {
                 ResourceLocation codecId = getStaticResourceLocationField(clazz, "CODEC_ID");
                 if (codecId == null) {

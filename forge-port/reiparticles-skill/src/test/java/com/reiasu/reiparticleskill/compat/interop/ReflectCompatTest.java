@@ -20,8 +20,8 @@ package com.reiasu.reiparticleskill.compat.interop;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReflectCompatTest {
     @Test
     void shouldInvokeStaticAndInstanceNoArgMethods() {

@@ -2,8 +2,10 @@
 // Copyright (C) 2025 Reiasu
 package com.reiasu.reiparticlesapi.network.particle.composition.manager;
 
+import com.mojang.logging.LogUtils;
 import com.reiasu.reiparticlesapi.network.particle.composition.ParticleComposition;
 import net.minecraft.network.FriendlyByteBuf;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -16,6 +18,8 @@ import java.util.function.Function;
 
 public final class ParticleCompositionManager {
     public static final ParticleCompositionManager INSTANCE = new ParticleCompositionManager();
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     private final List<ParticleComposition> compositions = new ArrayList<>();
     private final Map<UUID, ParticleComposition> clientView = new ConcurrentHashMap<>();
     private final Map<UUID, ParticleComposition> serverView = new ConcurrentHashMap<>();
@@ -60,7 +64,13 @@ public final class ParticleCompositionManager {
             Iterator<ParticleComposition> iterator = compositions.iterator();
             while (iterator.hasNext()) {
                 ParticleComposition composition = iterator.next();
-                composition.tick();
+                try {
+                    composition.tick();
+                } catch (Exception e) {
+                    LOGGER.warn("Particle composition {} ({}) failed during server tick; removing composition",
+                            composition.getControlUUID(), composition.getClass().getName(), e);
+                    composition.cancel();
+                }
                 if (composition.getCanceled()) {
                     iterator.remove();
                     serverView.remove(composition.getControlUUID());
@@ -70,11 +80,21 @@ public final class ParticleCompositionManager {
     }
 
     public void tickClient() {
-        clientView.entrySet().removeIf(entry -> {
+        Iterator<Map.Entry<UUID, ParticleComposition>> iterator = clientView.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, ParticleComposition> entry = iterator.next();
             ParticleComposition composition = entry.getValue();
-            composition.tick();
-            return composition.getCanceled();
-        });
+            try {
+                composition.tick();
+            } catch (Exception e) {
+                LOGGER.warn("Particle composition {} ({}) failed during client tick; removing composition",
+                        composition.getControlUUID(), composition.getClass().getName(), e);
+                composition.cancel();
+            }
+            if (composition.getCanceled()) {
+                iterator.remove();
+            }
+        }
     }
 
     public int activeCount() {

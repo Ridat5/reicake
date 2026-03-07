@@ -162,7 +162,11 @@ public final class ReiParticlesAPI {
             while (iterator.hasNext()) {
                 ScheduledTask task = iterator.next();
                 if (task.executionTick <= currentTick) {
-                    task.action.run();
+                    try {
+                        task.action.run();
+                    } catch (Exception e) {
+                        LOGGER.warn("Legacy scheduler task failed and was removed", e);
+                    }
                     iterator.remove();
                 }
             }

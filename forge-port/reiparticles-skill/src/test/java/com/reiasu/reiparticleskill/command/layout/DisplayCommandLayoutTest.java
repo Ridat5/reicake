@@ -21,8 +21,8 @@ package com.reiasu.reiparticleskill.command.layout;
 import com.reiasu.reiparticlesapi.utils.RelativeLocation;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 class DisplayCommandLayoutTest {
     @Test
     void shouldBuildFacingUpOrientation() {
@@ -51,4 +51,3 @@ class DisplayCommandLayoutTest {
         assertEquals(0.5f, index6.scaledSpeed());
     }
 }
-

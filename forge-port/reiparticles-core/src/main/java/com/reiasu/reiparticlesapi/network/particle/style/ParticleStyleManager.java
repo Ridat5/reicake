@@ -27,6 +27,7 @@ public final class ParticleStyleManager {
     private static final Map<UUID, ParticleGroupStyle> SERVER_VIEW_STYLES = new ConcurrentHashMap<>();
     private static final Map<UUID, Set<UUID>> VISIBLE = new ConcurrentHashMap<>();
     private static final Map<UUID, ParticleGroupStyle> CLIENT_VIEW_STYLES = new ConcurrentHashMap<>();
+    private static final ParticleStyleVisibilityTracker VISIBILITY_TRACKER = new ParticleStyleVisibilityTracker(VISIBLE);
 
     private ParticleStyleManager() {
     }
@@ -81,7 +82,7 @@ public final class ParticleStyleManager {
         if (world instanceof ServerLevel serverLevel) {
             style.setLastUpdatedGameTime(serverLevel.getGameTime());
             for (ServerPlayer player : serverLevel.players()) {
-                if (canViewStyle(style, player)) {
+                if (ParticleStyleVisibilityTracker.canViewStyle(style, player)) {
                     addStylePlayerView(player, style);
                 }
             }
@@ -108,6 +109,7 @@ public final class ParticleStyleManager {
     }
 
     public static void doTickServer() {
+        long visibilityTick = VISIBILITY_TRACKER.beginTick();
         Iterator<Map.Entry<UUID, ParticleGroupStyle>> iterator = SERVER_VIEW_STYLES.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<UUID, ParticleGroupStyle> entry = iterator.next();
@@ -121,14 +123,14 @@ public final class ParticleStyleManager {
                 }
 
                 style.setLastUpdatedGameTime(serverLevel.getGameTime());
-                upgradeVisible(style, serverLevel);
                 style.tick();
 
+                PacketParticleStyleS2C changePacket = null;
                 if (style.getAutoToggle() && !style.getCanceled() && style.consumeDirty()) {
-                    PacketParticleStyleS2C changePacket = buildAutoTogglePacket(style);
-                    for (ServerPlayer player : collectVisiblePlayers(serverLevel, style.getUuid())) {
-                        ReiParticlesNetwork.sendTo(player, changePacket);
-                    }
+                    changePacket = buildAutoTogglePacket(style);
+                }
+                if (!style.getCanceled()) {
+                    VISIBILITY_TRACKER.updateClientVisible(style, serverLevel, visibilityTick, changePacket);
                 }
             } catch (Exception e) {
                 LOGGER.warn("Particle style {} ({}) failed during server tick; removing style",
@@ -143,48 +145,6 @@ public final class ParticleStyleManager {
         }
 
         pruneDisconnectedPlayers();
-    }
-
-    private static Iterable<ServerPlayer> collectVisiblePlayers(ServerLevel level, UUID styleId) {
-        java.util.ArrayList<ServerPlayer> players = new java.util.ArrayList<>();
-        for (ServerPlayer player : level.players()) {
-            Set<UUID> visibleSet = VISIBLE.get(player.getUUID());
-            if (visibleSet != null && visibleSet.contains(styleId)) {
-                players.add(player);
-            }
-        }
-        return players;
-    }
-
-    private static void upgradeVisible(ParticleGroupStyle style, ServerLevel level) {
-        UUID styleId = style.getUuid();
-        for (ServerPlayer player : level.players()) {
-            Set<UUID> visibleSet = VISIBLE.computeIfAbsent(player.getUUID(), ignored -> ConcurrentHashMap.newKeySet());
-            boolean shouldView = canViewStyle(style, player);
-            boolean alreadyView = visibleSet.contains(styleId);
-
-            if (shouldView && !alreadyView) {
-                addStylePlayerView(player, style);
-                continue;
-            }
-
-            if (!shouldView && alreadyView) {
-                removeStylePlayerView(player, style);
-            }
-        }
-    }
-
-    private static boolean canViewStyle(ParticleGroupStyle style, ServerPlayer player) {
-        if (style.getWorld() == null || player == null) {
-            return false;
-        }
-        if (player.isRemoved() || player.isSpectator()) {
-            return false;
-        }
-        if (style.getWorld() != player.level()) {
-            return false;
-        }
-        return style.getPos().distanceTo(player.position()) <= style.getVisibleRange();
     }
 
     private static void removeStylePlayerView(ServerPlayer player, ParticleGroupStyle style) {
@@ -216,7 +176,7 @@ public final class ParticleStyleManager {
         return new PacketParticleStyleS2C(style.getUuid(), ControlType.CHANGE, args);
     }
 
-    private static PacketParticleStyleS2C buildCreatePacket(ParticleGroupStyle style, Vec3 pos) {
+    static PacketParticleStyleS2C buildCreatePacket(ParticleGroupStyle style, Vec3 pos) {
         ParticleControllerDataBuffers buffers = ParticleControllerDataBuffers.INSTANCE;
         Map<String, ParticleControllerDataBuffer<?>> args = new HashMap<>();
         ResourceLocation styleKey = style.getRegistryKey();
@@ -256,6 +216,7 @@ public final class ParticleStyleManager {
     private static void pruneDisconnectedPlayers() {
         if (SERVER_VIEW_STYLES.isEmpty()) {
             VISIBLE.clear();
+            VISIBILITY_TRACKER.clear();
             return;
         }
         VISIBLE.entrySet().removeIf(entry -> {
