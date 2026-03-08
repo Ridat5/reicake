@@ -3,11 +3,9 @@
 package com.reiasu.reiparticlesapi.display;
 
 import com.mojang.logging.LogUtils;
-import com.reiasu.reiparticlesapi.network.ReiParticlesNetwork;
 import com.reiasu.reiparticlesapi.network.packet.PacketDisplayEntityS2C;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
@@ -30,6 +28,8 @@ public final class DisplayEntityManager {
     private final Map<UUID, DisplayEntity> clientView = new ConcurrentHashMap<>();
     private final Map<String, Function<FriendlyByteBuf, DisplayEntity>> registeredTypes = new ConcurrentHashMap<>();
     private final Map<UUID, Set<UUID>> visibleByPlayer = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> pendingDirtySyncs = new ConcurrentHashMap<>();
+    private final DisplayEntityVisibilityTracker visibilityTracker = new DisplayEntityVisibilityTracker(visibleByPlayer);
     private volatile boolean builtinTypesRegistered;
 
     private DisplayEntityManager() {
@@ -79,7 +79,7 @@ public final class DisplayEntityManager {
                 displays.add(entity);
             }
             serverView.put(entity.getControlUUID(), entity);
-            sync(entity, PacketDisplayEntityS2C.Method.CREATE);
+            pendingDirtySyncs.remove(entity.getControlUUID());
             entity.clearDirty();
         }
     }
@@ -89,10 +89,12 @@ public final class DisplayEntityManager {
     }
 
     public void tickAll() {
+        long visibilityTick = visibilityTracker.beginTick();
         synchronized (displays) {
             Iterator<DisplayEntity> iterator = displays.iterator();
             while (iterator.hasNext()) {
                 DisplayEntity display = iterator.next();
+                ServerLevel serverLevel = display.level() instanceof ServerLevel level ? level : null;
                 try {
                     display.tick();
                 } catch (Exception e) {
@@ -103,16 +105,36 @@ public final class DisplayEntityManager {
                 if (display.getCanceled()) {
                     iterator.remove();
                     serverView.remove(display.getControlUUID());
-                    sync(display, PacketDisplayEntityS2C.Method.REMOVE);
+                    pendingDirtySyncs.remove(display.getControlUUID());
+                    visibilityTracker.removeAllViews(display, serverLevel);
                     continue;
                 }
                 if (display.consumeDirty()) {
-                    sync(display, PacketDisplayEntityS2C.Method.TOGGLE);
+                    pendingDirtySyncs.put(display.getControlUUID(), DisplayEntityVisibilityTracker.playerShardCount());
+                }
+                if (!hasSyncType(display)) {
+                    visibilityTracker.removeAllViews(display, serverLevel);
+                    pendingDirtySyncs.remove(display.getControlUUID());
+                    continue;
+                }
+                if (serverLevel == null) {
+                    visibilityTracker.removeAllViews(display, null);
+                    pendingDirtySyncs.remove(display.getControlUUID());
+                    continue;
+                }
+                boolean shouldSyncDirty = pendingDirtySyncs.containsKey(display.getControlUUID());
+                PacketDisplayEntityS2C dirtyPacket = shouldSyncDirty ? PacketDisplayEntityS2C.ofToggle(display) : null;
+                boolean dirtySyncComplete = visibilityTracker.updateClientVisible(display, serverLevel, visibilityTick, dirtyPacket);
+                if (shouldSyncDirty && dirtySyncComplete) {
+                    advanceDirtySyncWindow(display.getControlUUID());
                 }
             }
         }
         if (serverView.isEmpty()) {
-            visibleByPlayer.clear();
+            pendingDirtySyncs.clear();
+            visibilityTracker.clear();
+        } else {
+            visibilityTracker.pruneDisconnectedPlayers(serverView.values());
         }
     }
 
@@ -150,13 +172,15 @@ public final class DisplayEntityManager {
     public void clear() {
         synchronized (displays) {
             for (DisplayEntity display : displays) {
-                sync(display, PacketDisplayEntityS2C.Method.REMOVE);
+                ServerLevel level = display.level() instanceof ServerLevel serverLevel ? serverLevel : null;
+                visibilityTracker.removeAllViews(display, level);
                 display.cancel();
             }
             displays.clear();
         }
         serverView.clear();
-        visibleByPlayer.clear();
+        pendingDirtySyncs.clear();
+        visibilityTracker.clear();
         for (DisplayEntity display : clientView.values()) {
             display.cancel();
         }
@@ -176,70 +200,11 @@ public final class DisplayEntityManager {
         return displayPos.distanceTo(viewerPos) <= Math.max(0.0, visibleRange);
     }
 
-    private void sync(DisplayEntity entity, PacketDisplayEntityS2C.Method method) {
-        if (entity == null || entity.typeId() == null || entity.typeId().isBlank()) {
-            return;
-        }
-        ServerLevel level = entity.level() instanceof ServerLevel serverLevel ? serverLevel : null;
-        if (method == PacketDisplayEntityS2C.Method.REMOVE) {
-            removeTrackedVisibility(entity, level);
-            return;
-        }
-        if (level == null) {
-            return;
-        }
-
-        PacketDisplayEntityS2C createPacket = PacketDisplayEntityS2C.ofCreate(entity);
-        PacketDisplayEntityS2C togglePacket = method == PacketDisplayEntityS2C.Method.TOGGLE
-                ? PacketDisplayEntityS2C.ofToggle(entity)
-                : createPacket;
-        UUID displayId = entity.getControlUUID();
-
-        for (ServerPlayer player : level.players()) {
-            Set<UUID> visibleSet = visibleByPlayer.computeIfAbsent(player.getUUID(), ignored -> ConcurrentHashMap.newKeySet());
-            boolean shouldView = canView(entity, player);
-            boolean alreadyVisible = visibleSet.contains(displayId);
-
-            if (!shouldView && alreadyVisible) {
-                visibleSet.remove(displayId);
-                ReiParticlesNetwork.sendTo(player, PacketDisplayEntityS2C.ofRemove(entity));
-                continue;
-            }
-            if (shouldView && !alreadyVisible) {
-                visibleSet.add(displayId);
-                ReiParticlesNetwork.sendTo(player, createPacket);
-                continue;
-            }
-            if (shouldView && method == PacketDisplayEntityS2C.Method.TOGGLE) {
-                ReiParticlesNetwork.sendTo(player, togglePacket);
-            }
-        }
+    private void advanceDirtySyncWindow(UUID displayId) {
+        pendingDirtySyncs.computeIfPresent(displayId, (ignored, remaining) -> remaining <= 1 ? null : remaining - 1);
     }
 
-    private void removeTrackedVisibility(DisplayEntity entity, ServerLevel level) {
-        UUID displayId = entity.getControlUUID();
-        PacketDisplayEntityS2C removePacket = PacketDisplayEntityS2C.ofRemove(entity);
-        for (Map.Entry<UUID, Set<UUID>> entry : visibleByPlayer.entrySet()) {
-            if (!entry.getValue().remove(displayId) || level == null) {
-                continue;
-            }
-            ServerPlayer player = level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (player != null) {
-                ReiParticlesNetwork.sendTo(player, removePacket);
-            }
-        }
-    }
-
-    private static boolean canView(DisplayEntity entity, ServerPlayer player) {
-        if (entity == null || player == null || entity.level() == null) {
-            return false;
-        }
-        if (player.isRemoved() || player.isSpectator()) {
-            return false;
-        }
-        if (entity.level() != player.level()) {
-            return false;
-        }
-        return isWithinVisibleRange(entity.getPos(), player.position(), entity.getVisibleRange());
+    private static boolean hasSyncType(DisplayEntity display) {
+        return display.typeId() != null && !display.typeId().isBlank();
     }
 }

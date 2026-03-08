@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 final class ParticleStyleVisibilityTracker {
     private static final int PLAYER_SHARD_COUNT = 4;
@@ -117,11 +118,19 @@ final class ParticleStyleVisibilityTracker {
         return style.getPos().distanceTo(player.position()) <= style.getVisibleRange();
     }
 
-    private void addView(ServerPlayer player, ParticleGroupStyle style, Set<UUID> visibleSet) {
-        if (!visibleSet.add(style.getUuid())) {
-            return;
+    static boolean markVisibleAfterSuccessfulSend(Set<UUID> visibleSet, UUID styleId, BooleanSupplier sendAction) {
+        if (visibleSet.contains(styleId)) {
+            return false;
         }
-        sendPacket(player, ParticleStyleManager.buildCreatePacket(style, style.getPos()));
+        if (!sendAction.getAsBoolean()) {
+            return false;
+        }
+        return visibleSet.add(styleId);
+    }
+
+    private void addView(ServerPlayer player, ParticleGroupStyle style, Set<UUID> visibleSet) {
+        markVisibleAfterSuccessfulSend(visibleSet, style.getUuid(),
+                () -> sendPacket(player, ParticleStyleManager.buildCreatePacket(style, style.getPos())));
     }
 
     private void removeView(ServerPlayer player, ParticleGroupStyle style, Set<UUID> visibleSet) {
@@ -129,12 +138,16 @@ final class ParticleStyleVisibilityTracker {
         ReiParticlesNetwork.sendTo(player, new PacketParticleStyleS2C(style.getUuid(), ControlType.REMOVE, Map.of()));
     }
 
-    private void sendPacket(ServerPlayer player, PacketParticleStyleS2C packet) {
+    private boolean sendPacket(ServerPlayer player, PacketParticleStyleS2C packet) {
+        if (packet == null) {
+            return false;
+        }
         if (packetsThisTick.incrementAndGet() > APIConfig.INSTANCE.getPacketsPerTickLimit()) {
             statThrottled++;
-            return;
+            return false;
         }
         statSynced++;
         ReiParticlesNetwork.sendTo(player, packet);
+        return true;
     }
 }

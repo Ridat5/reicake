@@ -5,6 +5,8 @@ package com.reiasu.reiparticlesapi.renderer;
 import com.reiasu.reiparticlesapi.network.particle.ServerController;
 import com.reiasu.reiparticlesapi.renderer.server.ServerRenderEntityManager;
 import com.reiasu.reiparticlesapi.utils.RelativeLocation;
+import io.netty.buffer.Unpooled;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -17,6 +19,34 @@ import java.util.UUID;
  * and rendered client-side with custom shaders/models.
  */
 public abstract class RenderEntity implements ServerController<RenderEntity> {
+
+    public static void encodeBase(RenderEntity entity, FriendlyByteBuf buf) {
+        Vec3 pos = entity.getPos() == null ? Vec3.ZERO : entity.getPos();
+        Vec3 lastRenderPos = entity.getLastRenderPos() == null ? Vec3.ZERO : entity.getLastRenderPos();
+        buf.writeDouble(pos.x());
+        buf.writeDouble(pos.y());
+        buf.writeDouble(pos.z());
+        buf.writeDouble(entity.getRenderRange());
+        buf.writeBoolean(entity.getInit());
+        buf.writeBoolean(entity.getAlwaysToggle());
+        buf.writeBoolean(entity.getSyncOnce());
+        buf.writeDouble(lastRenderPos.x());
+        buf.writeDouble(lastRenderPos.y());
+        buf.writeDouble(lastRenderPos.z());
+        buf.writeInt(entity.getAge());
+        buf.writeUUID(entity.getUuid());
+    }
+
+    public static void decodeBase(RenderEntity instance, FriendlyByteBuf buf) {
+        instance.setPos(new Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble()));
+        instance.setRenderRange(buf.readDouble());
+        instance.setInit(buf.readBoolean());
+        instance.setAlwaysToggle(buf.readBoolean());
+        instance.setSyncOnce(buf.readBoolean());
+        instance.setLastRenderPos(new Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble()));
+        instance.setAge(buf.readInt());
+        instance.setUuid(buf.readUUID());
+    }
 
     private Level world;
     private Vec3 pos;
@@ -114,6 +144,14 @@ public abstract class RenderEntity implements ServerController<RenderEntity> {
         markDirty();
     }
 
+    public byte[] encodeToBytes() {
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        encodeBase(this, buf);
+        byte[] data = new byte[buf.readableBytes()];
+        buf.getBytes(0, data);
+        return data;
+    }
+
     public void markDirty() {
         this.dirty = true;
     }
@@ -130,6 +168,10 @@ public abstract class RenderEntity implements ServerController<RenderEntity> {
         this.world = another.world;
         this.pos = another.pos;
         this.renderRange = another.renderRange;
+        this.init = another.init;
+        this.alwaysToggle = another.alwaysToggle;
+        this.syncOnce = another.syncOnce;
+        this.lastRenderPos = another.lastRenderPos;
         this.uuid = another.uuid;
         this.age = another.age;
     }
@@ -151,7 +193,10 @@ public abstract class RenderEntity implements ServerController<RenderEntity> {
     public void setInit(boolean init) { this.init = init; }
     public boolean getAlwaysToggle() { return alwaysToggle; }
     public void setAlwaysToggle(boolean alwaysToggle) { this.alwaysToggle = alwaysToggle; }
+    public boolean getSyncOnce() { return syncOnce; }
+    public void setSyncOnce(boolean syncOnce) { this.syncOnce = syncOnce; }
     public Vec3 getLastRenderPos() { return lastRenderPos; }
+    public void setLastRenderPos(Vec3 lastRenderPos) { this.lastRenderPos = lastRenderPos == null ? Vec3.ZERO : lastRenderPos; }
     public int getAge() { return age; }
     public void setAge(int age) { this.age = age; }
     public UUID getUuid() { return uuid; }
@@ -161,4 +206,3 @@ public abstract class RenderEntity implements ServerController<RenderEntity> {
     @Override public boolean getCanceled() { return canceled; }
     public void setCanceled(boolean canceled) { this.canceled = canceled; }
 }
-

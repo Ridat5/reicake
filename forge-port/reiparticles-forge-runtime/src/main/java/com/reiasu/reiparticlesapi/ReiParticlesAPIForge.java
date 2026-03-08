@@ -5,6 +5,7 @@ package com.reiasu.reiparticlesapi;
 import com.mojang.logging.LogUtils;
 import com.reiasu.reiparticlesapi.animation.AnimateManager;
 import com.reiasu.reiparticlesapi.client.ClientTickEventForwarder;
+import com.reiasu.reiparticlesapi.client.ClientWorldLifecycleListener;
 import com.reiasu.reiparticlesapi.commands.APICommand;
 import com.reiasu.reiparticlesapi.config.APIConfigSpec;
 import com.reiasu.reiparticlesapi.display.DisplayEntityManager;
@@ -123,8 +124,14 @@ public final class ReiParticlesAPIForge {
         ControllableParticleEffectManager.INSTANCE.init();
         ReiParticlesAPI.init();
         ForgeEventForwarder.init();
+        registerClientListeners();
         ReiParticlesAPI.INSTANCE.loadScannerPackages();
         ReiParticlesAPI.INSTANCE.registerTest();
+    }
+
+    private void registerClientListeners() {
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                ReiParticlesAPI.INSTANCE.registerEventListener(MOD_ID, new ClientWorldLifecycleListener()));
     }
 
     private void onClientEndTick() {

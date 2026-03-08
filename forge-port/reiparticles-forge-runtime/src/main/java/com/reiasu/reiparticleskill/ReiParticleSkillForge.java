@@ -10,6 +10,7 @@ import com.reiasu.reiparticleskill.command.port.APITestCommandPort;
 import com.reiasu.reiparticleskill.command.port.DisplayCommandPort;
 import com.reiasu.reiparticleskill.command.port.RailgunCommandPort;
 import com.reiasu.reiparticleskill.config.SkillClientConfig;
+import com.reiasu.reiparticleskill.display.SkillCompositionTypes;
 import com.reiasu.reiparticleskill.display.SkillDisplayTypes;
 import com.reiasu.reiparticleskill.end.respawn.EndRespawnStateBridge;
 import com.reiasu.reiparticleskill.end.respawn.EndRespawnWatcher;
@@ -59,6 +60,7 @@ public final class ReiParticleSkillForge {
         ReiParticlesAPI.INSTANCE.loadScannerPackages();
         registerApiListeners();
         registerDisplayTypes();
+        registerCompositionTypes();
         registerRuntimePorts();
         registerTests();
         ReiParticlesAPI.INSTANCE.registerTest();
@@ -102,6 +104,10 @@ public final class ReiParticleSkillForge {
 
     private void registerDisplayTypes() {
         SkillDisplayTypes.register();
+    }
+
+    private void registerCompositionTypes() {
+        SkillCompositionTypes.register();
     }
 
     private void registerRuntimePorts() {

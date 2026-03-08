@@ -18,8 +18,9 @@ public final class ClientDisplayEntityPacketHandler {
     public static void receive(PacketDisplayEntityS2C packet) {
         DisplayEntity existing = DisplayEntityManager.INSTANCE.getClientView().get(packet.uuid());
         if (packet.method() == PacketDisplayEntityS2C.Method.REMOVE) {
-            if (existing != null) {
-                existing.cancel();
+            DisplayEntity removed = DisplayEntityManager.INSTANCE.getClientView().remove(packet.uuid());
+            if (removed != null) {
+                removed.cancel();
             }
             return;
         }
@@ -36,7 +37,7 @@ public final class ClientDisplayEntityPacketHandler {
         }
 
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level != null) {
+        if (minecraft != null && minecraft.level != null) {
             display.bindLevel(minecraft.level);
         }
 
@@ -45,9 +46,8 @@ public final class ClientDisplayEntityPacketHandler {
             return;
         }
         existing.update(display);
-        if (minecraft.level != null) {
+        if (minecraft != null && minecraft.level != null) {
             existing.bindLevel(minecraft.level);
         }
     }
 }
-

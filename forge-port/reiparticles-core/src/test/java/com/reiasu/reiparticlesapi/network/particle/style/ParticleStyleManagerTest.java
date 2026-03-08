@@ -18,7 +18,11 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package com.reiasu.reiparticlesapi.network.particle.style;
 
+import com.reiasu.reiparticlesapi.network.buffer.ParticleControllerDataBuffer;
+import com.reiasu.reiparticlesapi.network.packet.PacketParticleStyleS2C;
 import com.reiasu.reiparticlesapi.utils.RelativeLocation;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +30,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ParticleStyleManagerTest {
     @AfterEach
@@ -47,6 +52,27 @@ class ParticleStyleManagerTest {
         assertEquals(1, healthy.ticks);
         assertEquals(1, ParticleStyleManager.getClientViewStyles().size());
         assertSame(healthy, ParticleStyleManager.getClientViewStyles().get(healthy.getUuid()));
+    }
+
+    @Test
+    void shouldIncludeRegistryKeyInCreatePacket() {
+        ResourceLocation key = new ResourceLocation("reiparticlesruntime", "packet_style_" + System.nanoTime());
+        ParticleStyleManager.register(key, new CountingProvider());
+        CountingStyle style = new CountingStyle();
+        style.setRegistryKey(key);
+
+        PacketParticleStyleS2C packet = ParticleStyleManager.buildCreatePacket(style, new Vec3(1.0, 2.0, 3.0));
+        ParticleControllerDataBuffer<?> keyBuffer = packet.args().get("style_registry_key");
+
+        assertTrue(keyBuffer != null);
+        assertEquals(key.toString(), keyBuffer.getLoadedValue());
+    }
+
+    private static final class CountingProvider implements ParticleStyleProvider<CountingStyle> {
+        @Override
+        public CountingStyle create() {
+            return new CountingStyle();
+        }
     }
 
     private static final class CountingStyle extends ParticleGroupStyle {

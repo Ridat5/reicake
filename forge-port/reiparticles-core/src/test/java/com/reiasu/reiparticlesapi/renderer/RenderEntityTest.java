@@ -20,6 +20,8 @@ package com.reiasu.reiparticlesapi.renderer;
 
 import com.reiasu.reiparticlesapi.renderer.server.ServerRenderEntityManager;
 import com.reiasu.reiparticlesapi.testutil.UnsafeAllocator;
+import io.netty.buffer.Unpooled;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
@@ -50,7 +52,44 @@ class RenderEntityTest {
         assertTrue(ServerRenderEntityManager.INSTANCE.getEntities().containsKey(entity.getUuid()));
     }
 
+    @Test
+    void shouldEncodeDecodeAndLoadBaseRenderState() {
+        TestRenderEntity source = new TestRenderEntity();
+        source.setPos(new Vec3(4.0, 5.0, 6.0));
+        source.setRenderRange(96.0);
+        source.setInit(true);
+        source.setAlwaysToggle(true);
+        source.setSyncOnce(true);
+        source.setLastRenderPos(new Vec3(-1.0, 2.0, -3.0));
+        source.setAge(14);
+
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.wrappedBuffer(source.encodeToBytes()));
+        TestRenderEntity decoded = TestRenderEntity.decode(buf);
+        TestRenderEntity updated = new TestRenderEntity();
+        updated.loadProfileFromEntity(decoded);
+
+        assertEquals(source.getPos(), decoded.getPos());
+        assertEquals(source.getRenderRange(), decoded.getRenderRange());
+        assertEquals(source.getInit(), decoded.getInit());
+        assertEquals(source.getAlwaysToggle(), decoded.getAlwaysToggle());
+        assertEquals(source.getSyncOnce(), decoded.getSyncOnce());
+        assertEquals(source.getLastRenderPos(), decoded.getLastRenderPos());
+        assertEquals(source.getAge(), decoded.getAge());
+        assertEquals(source.getUuid(), decoded.getUuid());
+        assertEquals(decoded.getPos(), updated.getPos());
+        assertEquals(decoded.getLastRenderPos(), updated.getLastRenderPos());
+        assertEquals(decoded.getSyncOnce(), updated.getSyncOnce());
+    }
+
     private static final class TestRenderEntity extends RenderEntity {
+        private static final ResourceLocation ID = new ResourceLocation("reiparticlesapi", "test_render_entity");
+
+        public static TestRenderEntity decode(FriendlyByteBuf buf) {
+            TestRenderEntity entity = new TestRenderEntity();
+            RenderEntity.decodeBase(entity, buf);
+            return entity;
+        }
+
         @Override
         public void clientTick() {
         }
@@ -61,7 +100,7 @@ class RenderEntityTest {
 
         @Override
         public ResourceLocation getRenderID() {
-            return new ResourceLocation("reiparticlesapi", "test");
+            return ID;
         }
     }
 }

@@ -11,6 +11,8 @@ import com.reiasu.reiparticlesapi.network.particle.style.ParticleStyleManager;
 import com.reiasu.reiparticlesapi.network.particle.style.ParticleStyleProvider;
 import com.reiasu.reiparticlesapi.network.particle.style.StyleRegistry;
 import com.reiasu.reiparticlesapi.reflect.ReiAPIScanner;
+import com.reiasu.reiparticlesapi.renderer.RenderEntity;
+import com.reiasu.reiparticlesapi.renderer.client.ClientRenderEntityManager;
 import com.reiasu.reiparticlesapi.testutil.RecordingLogger;
 import com.reiasu.reiparticlesapi.utils.RelativeLocation;
 import net.minecraft.network.FriendlyByteBuf;
@@ -28,6 +30,7 @@ class RuntimePortAutoRegistrarTest {
     @AfterEach
     void cleanup() {
         ReiAPIScanner.INSTANCE.clear();
+        ClientRenderEntityManager.INSTANCE.clear();
     }
 
     @Test
@@ -38,6 +41,7 @@ class RuntimePortAutoRegistrarTest {
 
         assertNotNull(ParticleEmittersManager.getCodecFromID(SuccessEmitter.CODEC_ID));
         assertNotNull(ParticleStyleManager.getProvider(SuccessStyle.REGISTRY_KEY));
+        assertNotNull(ClientRenderEntityManager.INSTANCE.getCodecFromID(SuccessRenderEntity.ID));
         assertTrue(recorder.hasEvent("info", "Auto-registered"));
     }
 
@@ -97,6 +101,30 @@ class RuntimePortAutoRegistrarTest {
             public SuccessStyle create() {
                 return new SuccessStyle();
             }
+        }
+    }
+
+    @ReiAutoRegister
+    public static final class SuccessRenderEntity extends RenderEntity {
+        public static final ResourceLocation ID = new ResourceLocation("reiparticlesruntime", "success_render_entity_test");
+
+        public static SuccessRenderEntity decode(FriendlyByteBuf buf) {
+            SuccessRenderEntity entity = new SuccessRenderEntity();
+            RenderEntity.decodeBase(entity, buf);
+            return entity;
+        }
+
+        @Override
+        public void clientTick() {
+        }
+
+        @Override
+        public void serverTick() {
+        }
+
+        @Override
+        public ResourceLocation getRenderID() {
+            return ID;
         }
     }
 

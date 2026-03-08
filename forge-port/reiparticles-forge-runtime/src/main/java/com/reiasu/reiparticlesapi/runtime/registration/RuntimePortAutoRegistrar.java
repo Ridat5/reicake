@@ -9,6 +9,9 @@ import com.reiasu.reiparticlesapi.network.particle.style.ParticleGroupStyle;
 import com.reiasu.reiparticlesapi.network.particle.style.ParticleStyleManager;
 import com.reiasu.reiparticlesapi.network.particle.style.ParticleStyleProvider;
 import com.reiasu.reiparticlesapi.reflect.ReiAPIScanner;
+import com.reiasu.reiparticlesapi.renderer.RenderEntity;
+import com.reiasu.reiparticlesapi.renderer.client.ClientRenderEntityManager;
+import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
@@ -32,6 +35,8 @@ import java.util.function.Function;
  *   <li>Styles: must have {@code public static final ResourceLocation REGISTRY_KEY}
  *       and an inner class named {@code Provider} that
  *       implements {@link ParticleStyleProvider}</li>
+ *   <li>Render entities: must have {@code public static final ResourceLocation ID}
+ *       (or {@code RENDER_ID}) and {@code public static T decode(FriendlyByteBuf)}</li>
  * </ul>
  */
 public final class RuntimePortAutoRegistrar {
@@ -51,6 +56,7 @@ public final class RuntimePortAutoRegistrar {
     static void registerDiscoveredClasses(Logger logger, Collection<Class<?>> annotated) {
         int emitters = 0;
         int styles = 0;
+        int renderEntities = 0;
 
         for (Class<?> clazz : annotated.stream().sorted(Comparator.comparing(Class::getName)).toList()) {
             if (ParticleEmitters.class.isAssignableFrom(clazz)) {
@@ -59,7 +65,7 @@ public final class RuntimePortAutoRegistrar {
                     logger.warn("Emitter {} has @ReiAutoRegister but no CODEC_ID field", clazz.getName());
                     continue;
                 }
-                Function<FriendlyByteBuf, ParticleEmitters> decoder = findDecoder(clazz);
+                Function<FriendlyByteBuf, ParticleEmitters> decoder = findEmitterDecoder(clazz);
                 if (decoder == null) {
                     logger.warn("Emitter {} has @ReiAutoRegister but no decode(FriendlyByteBuf) method", clazz.getName());
                     continue;
@@ -82,10 +88,31 @@ public final class RuntimePortAutoRegistrar {
                 }
                 ParticleStyleManager.register(registryKey, provider);
                 styles++;
+                continue;
+            }
+
+            if (RenderEntity.class.isAssignableFrom(clazz)) {
+                ResourceLocation renderId = getStaticResourceLocationField(clazz, "ID");
+                if (renderId == null) {
+                    renderId = getStaticResourceLocationField(clazz, "RENDER_ID");
+                }
+                if (renderId == null) {
+                    logger.warn("Render entity {} has @ReiAutoRegister but no ID/RENDER_ID field", clazz.getName());
+                    continue;
+                }
+                Function<FriendlyByteBuf, RenderEntity> decoder = findRenderEntityDecoder(clazz);
+                if (decoder == null) {
+                    logger.warn("Render entity {} has @ReiAutoRegister but no decode(FriendlyByteBuf) method", clazz.getName());
+                    continue;
+                }
+                ClientRenderEntityManager.INSTANCE.registerCodec(renderId,
+                        data -> decoder.apply(new FriendlyByteBuf(Unpooled.wrappedBuffer(data))));
+                renderEntities++;
             }
         }
 
-        logger.info("Auto-registered {} emitters, {} styles via @ReiAutoRegister", emitters, styles);
+        logger.info("Auto-registered {} emitters, {} styles, {} render entities via @ReiAutoRegister",
+                emitters, styles, renderEntities);
     }
 
     private static ResourceLocation getStaticResourceLocationField(Class<?> clazz, String name) {
@@ -101,7 +128,7 @@ public final class RuntimePortAutoRegistrar {
     }
 
     @SuppressWarnings("unchecked")
-    private static Function<FriendlyByteBuf, ParticleEmitters> findDecoder(Class<?> clazz) {
+    private static Function<FriendlyByteBuf, ParticleEmitters> findEmitterDecoder(Class<?> clazz) {
         try {
             Method m = clazz.getDeclaredMethod("decode", FriendlyByteBuf.class);
             if (Modifier.isStatic(m.getModifiers()) && ParticleEmitters.class.isAssignableFrom(m.getReturnType())) {
@@ -109,6 +136,25 @@ public final class RuntimePortAutoRegistrar {
                 return buf -> {
                     try {
                         return (ParticleEmitters) m.invoke(null, buf);
+                    } catch (Exception e) {
+                        throw new RuntimeException("decode() failed for " + clazz.getName(), e);
+                    }
+                };
+            }
+        } catch (NoSuchMethodException ignored) {
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Function<FriendlyByteBuf, RenderEntity> findRenderEntityDecoder(Class<?> clazz) {
+        try {
+            Method m = clazz.getDeclaredMethod("decode", FriendlyByteBuf.class);
+            if (Modifier.isStatic(m.getModifiers()) && RenderEntity.class.isAssignableFrom(m.getReturnType())) {
+                m.setAccessible(true);
+                return buf -> {
+                    try {
+                        return (RenderEntity) m.invoke(null, buf);
                     } catch (Exception e) {
                         throw new RuntimeException("decode() failed for " + clazz.getName(), e);
                     }

@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Reiasu
 package com.reiasu.reiparticlesapi.network.packet;
 
+import com.reiasu.reiparticlesapi.renderer.RenderEntity;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 
@@ -40,7 +41,7 @@ public final class PacketRenderEntityS2C {
 
     public PacketRenderEntityS2C(UUID uuid, byte[] entityData, ResourceLocation id, Method method) {
         this.uuid = uuid;
-        this.entityData = entityData;
+        this.entityData = entityData == null ? new byte[0] : entityData.clone();
         this.id = id;
         this.method = method;
     }
@@ -54,11 +55,11 @@ public final class PacketRenderEntityS2C {
     }
 
     public byte[] getEntityData() {
-        return entityData;
+        return entityData.clone();
     }
 
     public void setEntityData(byte[] entityData) {
-        this.entityData = entityData;
+        this.entityData = entityData == null ? new byte[0] : entityData.clone();
     }
 
     public ResourceLocation getId() {
@@ -77,24 +78,25 @@ public final class PacketRenderEntityS2C {
         this.method = method;
     }
 
-    public static PacketRenderEntityS2C ofSpawn(com.reiasu.reiparticlesapi.renderer.RenderEntity entity) {
-        return new PacketRenderEntityS2C(entity.getUuid(), new byte[0], entity.getRenderID(), Method.CREATE);
+    public static PacketRenderEntityS2C ofSpawn(RenderEntity entity) {
+        return new PacketRenderEntityS2C(entity.getUuid(), entity.encodeToBytes(), entity.getRenderID(), Method.CREATE);
     }
 
-    public static PacketRenderEntityS2C ofSync(com.reiasu.reiparticlesapi.renderer.RenderEntity entity) {
-        return new PacketRenderEntityS2C(entity.getUuid(), new byte[0], entity.getRenderID(), Method.TOGGLE);
+    public static PacketRenderEntityS2C ofSync(RenderEntity entity) {
+        return new PacketRenderEntityS2C(entity.getUuid(), entity.encodeToBytes(), entity.getRenderID(), Method.TOGGLE);
     }
 
-    public static PacketRenderEntityS2C ofRemove(com.reiasu.reiparticlesapi.renderer.RenderEntity entity) {
+    public static PacketRenderEntityS2C ofRemove(RenderEntity entity) {
         return new PacketRenderEntityS2C(entity.getUuid(), new byte[0], entity.getRenderID(), Method.REMOVE);
     }
 
     public static void encode(PacketRenderEntityS2C packet, FriendlyByteBuf buf) {
+        byte[] entityData = packet.entityData == null ? new byte[0] : packet.entityData;
         buf.writeInt(packet.method.getId());
         buf.writeUUID(packet.uuid);
         buf.writeResourceLocation(packet.id);
-        buf.writeInt(packet.entityData.length);
-        buf.writeBytes(packet.entityData);
+        buf.writeInt(entityData.length);
+        buf.writeBytes(entityData);
     }
 
     public static PacketRenderEntityS2C decode(FriendlyByteBuf buf) {

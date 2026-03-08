@@ -15,16 +15,24 @@ public final class ClientRenderEntityPacketHandler {
 
     public static void receive(PacketRenderEntityS2C packet) {
         PacketRenderEntityS2C.Method method = packet.getMethod();
-        byte[] data = packet.getEntityData();
+        if (method == PacketRenderEntityS2C.Method.REMOVE) {
+            ClientRenderEntityManager.INSTANCE.remove(packet.getUuid());
+            return;
+        }
 
         Function<byte[], RenderEntity> codec = ClientRenderEntityManager.INSTANCE.getCodecFromID(packet.getId());
-        if (codec == null) return;
+        if (codec == null) {
+            return;
+        }
 
-        RenderEntity entity = codec.apply(data);
-        if (entity == null) return;
+        RenderEntity entity = codec.apply(packet.getEntityData());
+        if (entity == null) {
+            return;
+        }
+        entity.setUuid(packet.getUuid());
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null) {
+        if (mc != null && mc.level != null) {
             entity.setWorld(mc.level);
         }
 
@@ -34,15 +42,12 @@ public final class ClientRenderEntityPacketHandler {
                 RenderEntity existing = ClientRenderEntityManager.INSTANCE.getFrom(packet.getUuid());
                 if (existing != null) {
                     existing.loadProfileFromEntity(entity);
+                    if (mc != null && mc.level != null) {
+                        existing.setWorld(mc.level);
+                    }
                 }
             }
-            case REMOVE -> {
-                RenderEntity existing = ClientRenderEntityManager.INSTANCE.getFrom(packet.getUuid());
-                if (existing != null) {
-                    existing.setCanceled(true);
-                }
-            }
+            case REMOVE -> ClientRenderEntityManager.INSTANCE.remove(packet.getUuid());
         }
     }
 }
-

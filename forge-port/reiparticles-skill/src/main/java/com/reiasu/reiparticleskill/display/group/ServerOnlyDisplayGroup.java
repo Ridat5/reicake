@@ -244,6 +244,7 @@ public abstract class ServerOnlyDisplayGroup implements ServerController<ServerO
             return;
         }
         if (control instanceof DisplayEntity displayEntity) {
+            displayEntity.setPos(targetPos);
             ServerLevel serverLevel = world instanceof ServerLevel sl ? sl : null;
             DisplayEntityManager.INSTANCE.spawn(displayEntity, serverLevel);
             return;
@@ -270,6 +271,10 @@ public abstract class ServerOnlyDisplayGroup implements ServerController<ServerO
         }
         if (control instanceof ServerOnlyDisplayGroup group) {
             group.teleportTo(targetPos);
+            return;
+        }
+        if (control instanceof DisplayEntity displayEntity) {
+            displayEntity.setPos(targetPos);
             return;
         }
         if (control instanceof ServerMovableDisplay movable) {

@@ -11,6 +11,7 @@ import com.reiasu.reiparticlesapi.network.particle.style.ParticleStyleProvider;
 import com.reiasu.reiparticlesapi.particles.control.ControlType;
 import com.reiasu.reiparticlesapi.utils.RelativeLocation;
 import net.minecraft.client.Minecraft;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
@@ -54,12 +55,10 @@ public final class ClientParticleStylePacketHandler {
     }
 
     static void handleCreate(UUID uuid, Map<String, ParticleControllerDataBuffer<?>> args, Logger logger) {
+        ResourceLocation styleKey = readResourceLocation(args, "style_registry_key");
         Integer styleTypeId = readInt(args, "style_type_id");
-        if (styleTypeId == null || styleTypeId < 0) {
-            return;
-        }
         try {
-            ParticleStyleProvider<?> provider = ParticleStyleManager.getProviderByRawID(styleTypeId);
+            ParticleStyleProvider<?> provider = resolveProvider(styleKey, styleTypeId);
             if (provider == null) {
                 return;
             }
@@ -68,9 +67,9 @@ public final class ClientParticleStylePacketHandler {
                 return;
             }
             style.setUuid(uuid);
-            net.minecraft.resources.ResourceLocation key = ParticleStyleManager.getStyleKey(styleTypeId);
-            if (key != null) {
-                style.setRegistryKey(key);
+            ResourceLocation resolvedKey = resolveStyleKey(styleKey, styleTypeId);
+            if (resolvedKey != null) {
+                style.setRegistryKey(resolvedKey);
             }
             applyCommonArgs(style, args);
             style.readPacketArgs(args);
@@ -81,8 +80,31 @@ public final class ClientParticleStylePacketHandler {
             }
             ParticleStyleManager.spawnStyle(minecraft.level, style.getPos(), style);
         } catch (Exception e) {
-            logger.warn("Failed to spawn particle style {} (type {})", uuid, styleTypeId, e);
+            logger.warn("Failed to spawn particle style {} (key {}, type {})", uuid, styleKey, styleTypeId, e);
         }
+    }
+
+    static ParticleStyleProvider<?> resolveProvider(ResourceLocation styleKey, Integer styleTypeId) {
+        if (styleKey != null) {
+            ParticleStyleProvider<?> provider = ParticleStyleManager.getProvider(styleKey);
+            if (provider != null) {
+                return provider;
+            }
+        }
+        if (styleTypeId == null || styleTypeId < 0) {
+            return null;
+        }
+        return ParticleStyleManager.getProviderByRawID(styleTypeId);
+    }
+
+    static ResourceLocation resolveStyleKey(ResourceLocation styleKey, Integer styleTypeId) {
+        if (styleKey != null) {
+            return styleKey;
+        }
+        if (styleTypeId == null || styleTypeId < 0) {
+            return null;
+        }
+        return ParticleStyleManager.getStyleKey(styleTypeId);
     }
 
     private static void applyCommonArgs(ParticleGroupStyle style, Map<String, ? extends ParticleControllerDataBuffer<?>> args) {
@@ -170,6 +192,17 @@ public final class ClientParticleStylePacketHandler {
     private static Boolean readBoolean(Map<String, ? extends ParticleControllerDataBuffer<?>> args, String key) {
         Object value = read(args, key);
         return value instanceof Boolean b ? b : null;
+    }
+
+    private static ResourceLocation readResourceLocation(Map<String, ? extends ParticleControllerDataBuffer<?>> args, String key) {
+        Object value = read(args, key);
+        if (value instanceof ResourceLocation resourceLocation) {
+            return resourceLocation;
+        }
+        if (value instanceof String path && !path.isBlank()) {
+            return ResourceLocation.tryParse(path);
+        }
+        return null;
     }
 
     private static Object read(Map<String, ? extends ParticleControllerDataBuffer<?>> args, String key) {

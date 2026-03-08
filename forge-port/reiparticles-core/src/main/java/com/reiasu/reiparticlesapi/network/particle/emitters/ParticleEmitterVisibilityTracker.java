@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 final class ParticleEmitterVisibilityTracker {
     private static final int PLAYER_SHARD_COUNT = 4;
@@ -110,6 +111,16 @@ final class ParticleEmitterVisibilityTracker {
         return player.position().distanceTo(emitters.position()) <= range;
     }
 
+    static boolean markVisibleAfterSuccessfulSend(Set<UUID> visibleSet, UUID emitterId, BooleanSupplier sendAction) {
+        if (visibleSet.contains(emitterId)) {
+            return false;
+        }
+        if (!sendAction.getAsBoolean()) {
+            return false;
+        }
+        return visibleSet.add(emitterId);
+    }
+
     void removeAllViews(ParticleEmitters emitters) {
         ServerLevel level = emitters.level() instanceof ServerLevel serverLevel ? serverLevel : null;
         for (Map.Entry<UUID, Set<UUID>> entry : visible.entrySet()) {
@@ -164,30 +175,28 @@ final class ParticleEmitterVisibilityTracker {
         packetsThisTick.set(0);
     }
 
-    private void sendChange(ParticleEmitters emitters, ServerPlayer player) {
-        if (packetsThisTick.incrementAndGet() > APIConfig.INSTANCE.getPacketsPerTickLimit()) {
-            statThrottled++;
-            return;
-        }
-        statSynced++;
+    private boolean sendChange(ParticleEmitters emitters, ServerPlayer player) {
         ResourceLocation key = emitters.getEmittersID();
         if (key == null || EmitterRegistry.INSTANCE.getDecoder(key) == null) {
-            return;
+            return false;
+        }
+        if (packetsThisTick.incrementAndGet() > APIConfig.INSTANCE.getPacketsPerTickLimit()) {
+            statThrottled++;
+            return false;
         }
         PacketParticleEmittersS2C packet = new PacketParticleEmittersS2C(
                 key,
                 emitters.encodeToBytes(),
                 PacketParticleEmittersS2C.PacketType.CHANGE_OR_CREATE
         );
+        statSynced++;
         ReiParticlesNetwork.sendTo(player, packet);
+        return true;
     }
 
     private void addView(ServerPlayer player, ParticleEmitters emitters) {
         Set<UUID> visibleSet = visible.computeIfAbsent(player.getUUID(), ignored -> ConcurrentHashMap.newKeySet());
-        if (!visibleSet.add(emitters.getUuid())) {
-            return;
-        }
-        sendChange(emitters, player);
+        markVisibleAfterSuccessfulSend(visibleSet, emitters.getUuid(), () -> sendChange(emitters, player));
     }
 
     private void removeView(ServerPlayer player, ParticleEmitters emitters) {

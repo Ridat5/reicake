@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
- * Base class for particle compositions — groups of particles managed as a unit.
+ * Base class for particle compositions 鈥?groups of particles managed as a unit.
  * <p>
  * Manages both server-side state (serialization, rotation, scaling, pre-tick
  * action queue) and client-side particle display via {@link ParticleDisplayer}.
@@ -33,7 +33,7 @@ import java.util.function.Consumer;
 public abstract class ParticleComposition
         implements ServerController<ParticleComposition>, Controllable<ParticleComposition> {
 
-    // ─── Companion-style static encode/decode ────────────────────────────
+    // 鈹€鈹€鈹€ Companion-style static encode/decode 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     public static void encodeBase(ParticleComposition data, FriendlyByteBuf buf) {
         buf.writeUUID(data.controlUUID);
@@ -65,7 +65,7 @@ public abstract class ParticleComposition
         instance.status.updateCurrent(buf.readInt());
     }
 
-    // ─── Fields ──────────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€ Fields 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     private Vec3 position;
     private Level world;
@@ -85,8 +85,9 @@ public abstract class ParticleComposition
     private int tick;
     private int maxTick = -1;
     private boolean flushed;
+    private boolean dirty = true;
 
-    // ─── Constructors ────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€ Constructors 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     protected ParticleComposition() {
         this(Vec3.ZERO, null);
@@ -97,7 +98,7 @@ public abstract class ParticleComposition
         this.world = world;
     }
 
-    // ─── Abstract methods ────────────────────────────────────────────────
+    // 鈹€鈹€鈹€ Abstract methods 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     /**
      * Returns the particle-data-to-location mapping that defines this composition's shape.
@@ -109,7 +110,7 @@ public abstract class ParticleComposition
      */
     public abstract void onDisplay();
 
-    // ─── Property accessors ──────────────────────────────────────────────
+    // 鈹€鈹€鈹€ Property accessors 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     public Vec3 getPosition() {
         return position;
@@ -117,6 +118,7 @@ public abstract class ParticleComposition
 
     public void setPosition(Vec3 position) {
         this.position = position;
+        markDirty();
     }
 
     public Level getWorld() {
@@ -125,6 +127,7 @@ public abstract class ParticleComposition
 
     public void setWorld(Level world) {
         this.world = world;
+        markDirty();
     }
 
     public double getVisibleRange() {
@@ -133,6 +136,7 @@ public abstract class ParticleComposition
 
     public void setVisibleRange(double visibleRange) {
         this.visibleRange = visibleRange;
+        markDirty();
     }
 
     public double getScale() {
@@ -141,6 +145,7 @@ public abstract class ParticleComposition
 
     public void setScale(double scale) {
         this.scale = scale;
+        markDirty();
     }
 
     public boolean getClient() {
@@ -166,6 +171,7 @@ public abstract class ParticleComposition
 
     public void setCanceled(boolean canceled) {
         this.canceled = canceled;
+        markDirty();
     }
 
     public UUID getControlUUID() {
@@ -174,6 +180,7 @@ public abstract class ParticleComposition
 
     public void setControlUUID(UUID controlUUID) {
         this.controlUUID = controlUUID;
+        markDirty();
     }
 
     public RelativeLocation getAxis() {
@@ -182,6 +189,7 @@ public abstract class ParticleComposition
 
     public void setAxis(RelativeLocation axis) {
         this.axis = axis;
+        markDirty();
     }
 
     public double getRoll() {
@@ -190,6 +198,7 @@ public abstract class ParticleComposition
 
     public void setRoll(double roll) {
         this.roll = roll;
+        markDirty();
     }
 
     public CompositionStatusHelper getStatus() {
@@ -210,9 +219,24 @@ public abstract class ParticleComposition
 
     public void setMaxTick(int maxTick) {
         this.maxTick = maxTick;
+        markDirty();
     }
 
-    // ─── Pre-tick actions ────────────────────────────────────────────────
+    public void markDirty() {
+        dirty = true;
+    }
+
+    public boolean consumeDirty() {
+        boolean wasDirty = dirty;
+        dirty = false;
+        return wasDirty;
+    }
+
+    public void clearDirty() {
+        dirty = false;
+    }
+
+    // 鈹€鈹€鈹€ Pre-tick actions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     /**
      * Adds a pre-tick action that runs every tick before the main tick logic.
@@ -232,7 +256,7 @@ public abstract class ParticleComposition
         return this;
     }
 
-    // ─── Lifecycle ───────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€ Lifecycle 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     @Override
     public void tick() {
@@ -251,6 +275,7 @@ public abstract class ParticleComposition
     public void scale(double d) {
         if (d < 0.0) return;
         this.scale = d;
+        markDirty();
     }
 
     public void display() {
@@ -315,7 +340,7 @@ public abstract class ParticleComposition
         CodecHelper.INSTANCE.updateFields(this, other);
     }
 
-    // ─── Display / particles ─────────────────────────────────────────────
+    // 鈹€鈹€鈹€ Display / particles 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     public void beforeDisplay(Map<CompositionData, RelativeLocation> map) {
         // Override in subclass to modify locations before display
@@ -404,16 +429,18 @@ public abstract class ParticleComposition
         return this;
     }
 
-    // ─── Rotation ────────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€ Rotation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     public void rotateToPoint(RelativeLocation to) {
         if (!client) {
             axis = to;
+            markDirty();
             return;
         }
         Math3DUtil.rotatePointsToPoint(particleRotatedLocations, to, axis);
         axis = to;
         toggleRelative();
+        markDirty();
     }
 
     public void rotateToWithAngle(RelativeLocation to, double radian) {
@@ -425,12 +452,14 @@ public abstract class ParticleComposition
         }
         if (!client) {
             axis = to;
+            markDirty();
             return;
         }
         Math3DUtil.rotateAsAxis(particleRotatedLocations, axis, radian);
         Math3DUtil.rotatePointsToPoint(particleRotatedLocations, to, axis);
         axis = to;
         toggleRelative();
+        markDirty();
     }
 
     public void rotateAsAxis(double radian) {
@@ -440,12 +469,16 @@ public abstract class ParticleComposition
         } else if (roll <= -Math.PI * 2) {
             roll += Math.PI * 2;
         }
-        if (!client) return;
+        if (!client) {
+            markDirty();
+            return;
+        }
         Math3DUtil.rotateAsAxis(particleRotatedLocations, axis, radian);
         toggleRelative();
+        markDirty();
     }
 
-    // ─── Pre-rotation helpers (used before display) ──────────────────────
+    // 鈹€鈹€鈹€ Pre-rotation helpers (used before display) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     public void preRotateTo(Map<CompositionData, RelativeLocation> map, RelativeLocation to) {
         Math3DUtil.rotatePointsToPoint(new ArrayList<>(map.values()), to, axis);
@@ -461,7 +494,7 @@ public abstract class ParticleComposition
         Math3DUtil.rotateAsAxis(new ArrayList<>(map.values()), axis, angle);
     }
 
-    // ─── Controllable interface support ───────────────────────────────────
+    // 鈹€鈹€鈹€ Controllable interface support 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     @Override
     public UUID controlUUID() {
@@ -472,6 +505,7 @@ public abstract class ParticleComposition
     public void teleportTo(Vec3 pos) {
         this.position = pos;
         toggleRelative();
+        markDirty();
     }
 
     @Override

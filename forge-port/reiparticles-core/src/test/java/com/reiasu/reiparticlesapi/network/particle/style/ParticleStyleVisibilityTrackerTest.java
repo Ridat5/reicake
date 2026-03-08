@@ -4,6 +4,11 @@ package com.reiasu.reiparticlesapi.network.particle.style;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,5 +28,23 @@ final class ParticleStyleVisibilityTrackerTest {
         assertFalse(ParticleStyleVisibilityTracker.shouldProcessPlayerIndex(1, 0));
         assertTrue(ParticleStyleVisibilityTracker.shouldProcessPlayerIndex(1, 1));
         assertFalse(ParticleStyleVisibilityTracker.shouldProcessPlayerIndex(3, 1));
+    }
+
+    @Test
+    void shouldOnlyTrackStyleAfterSuccessfulSend() {
+        Set<UUID> visible = new HashSet<>();
+        UUID styleId = UUID.randomUUID();
+
+        assertFalse(ParticleStyleVisibilityTracker.markVisibleAfterSuccessfulSend(visible, styleId, () -> false));
+        assertFalse(visible.contains(styleId));
+        assertTrue(ParticleStyleVisibilityTracker.markVisibleAfterSuccessfulSend(visible, styleId, () -> true));
+        assertTrue(visible.contains(styleId));
+
+        AtomicInteger sendAttempts = new AtomicInteger();
+        assertFalse(ParticleStyleVisibilityTracker.markVisibleAfterSuccessfulSend(visible, styleId, () -> {
+            sendAttempts.incrementAndGet();
+            return true;
+        }));
+        assertEquals(0, sendAttempts.get());
     }
 }

@@ -182,6 +182,9 @@ public final class ParticleStyleManager {
         ResourceLocation styleKey = style.getRegistryKey();
         int styleRegistryId = styleKey != null ? StyleRegistry.INSTANCE.getId(styleKey) : -1;
         args.put("style_type_id", buffers.intValue(styleRegistryId));
+        if (styleKey != null) {
+            args.put("style_registry_key", buffers.string(styleKey.toString()));
+        }
         args.put("pos", buffers.vec3d(pos));
         args.put("rotate", buffers.doubleValue(style.getRotate()));
         args.put("axis", buffers.vec3d(style.getAxis().toVector()));
