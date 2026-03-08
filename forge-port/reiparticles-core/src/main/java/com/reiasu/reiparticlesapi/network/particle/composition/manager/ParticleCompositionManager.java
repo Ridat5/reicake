@@ -151,6 +151,7 @@ public final class ParticleCompositionManager {
                 composition.cancel();
             }
             if (composition.getCanceled()) {
+                composition.remove();
                 iterator.remove();
             }
         }
@@ -164,7 +165,7 @@ public final class ParticleCompositionManager {
 
     public void clearClient() {
         for (ParticleComposition composition : clientView.values()) {
-            composition.cancel();
+            composition.remove();
         }
         clientView.clear();
     }
@@ -316,3 +317,5 @@ public final class ParticleCompositionManager {
         return composition.getPosition().distanceTo(player.position()) <= Math.max(0.0, composition.getVisibleRange());
     }
 }
+
+

@@ -56,9 +56,9 @@ final class ParticleEmitterRuntime {
         if (!(emitter instanceof ParticleEmitters particleEmitters)) {
             return;
         }
-        int limit = APIConfig.INSTANCE.getParticleCountLimit();
+        int emitterLimit = APIConfig.INSTANCE.getParticleCountLimit();
         synchronized (emitters) {
-            if (emitters.size() >= limit) {
+            if (emitters.size() >= emitterLimit) {
                 return;
             }
         }
@@ -110,8 +110,7 @@ final class ParticleEmitterRuntime {
                 if (!current.getCanceled()) {
                     continue;
                 }
-                visibilityTracker.removeAllViews(current);
-                ReiEventBus.call(new EmitterRemoveEvent(current, false));
+                discardServerEmitter(current, true);
                 iterator.remove();
             }
         }
@@ -131,7 +130,7 @@ final class ParticleEmitterRuntime {
     void clear() {
         synchronized (emitters) {
             for (ParticleEmitters emitter : emitters) {
-                emitter.cancel();
+                discardServerEmitter(emitter, true);
             }
             emitters.clear();
         }
@@ -155,5 +154,16 @@ final class ParticleEmitterRuntime {
         synchronized (emitters) {
             return new ArrayList<>(emitters);
         }
+    }
+
+    private void discardServerEmitter(ParticleEmitters emitter, boolean notifyClients) {
+        if (emitter == null) {
+            return;
+        }
+        emitter.cancel();
+        if (notifyClients) {
+            visibilityTracker.removeAllViews(emitter);
+        }
+        ReiEventBus.call(new EmitterRemoveEvent(emitter, false));
     }
 }

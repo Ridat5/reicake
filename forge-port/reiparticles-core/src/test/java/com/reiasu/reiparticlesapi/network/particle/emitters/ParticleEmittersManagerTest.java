@@ -18,6 +18,10 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package com.reiasu.reiparticlesapi.network.particle.emitters;
 
+import com.reiasu.reiparticlesapi.annotations.events.EventHandler;
+import com.reiasu.reiparticlesapi.config.APIConfig;
+import com.reiasu.reiparticlesapi.event.ReiEventBus;
+import com.reiasu.reiparticlesapi.event.events.particle.emitter.EmitterRemoveEvent;
 import com.reiasu.reiparticlesapi.testutil.UnsafeAllocator;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.level.ServerLevel;
@@ -35,7 +39,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ParticleEmittersManagerTest {
     @AfterEach
     void cleanup() {
+        ReiEventBus.INSTANCE.clear();
         ParticleEmittersManager.clear();
+        APIConfig.INSTANCE.setParticleCountLimit(131072);
     }
 
     @Test
@@ -124,6 +130,51 @@ class ParticleEmittersManagerTest {
         assertFalse(serverEmitter.getCanceled());
     }
 
+    @Test
+    void shouldRespectConfiguredActiveEmitterLimit() {
+        APIConfig.INSTANCE.setParticleCountLimit(1);
+        CountingEmitter first = new CountingEmitter();
+        CountingEmitter second = new CountingEmitter();
+
+        ParticleEmittersManager.spawnEmitters(first);
+        ParticleEmittersManager.spawnEmitters(second);
+
+        assertEquals(1, ParticleEmittersManager.activeCount());
+        assertSame(first, ParticleEmittersManager.getEmitters().get(0));
+    }
+
+    @Test
+    void clearShouldPublishRemoveEventForEveryServerEmitter() {
+        RemoveListener listener = new RemoveListener();
+        ReiEventBus.INSTANCE.registerListenerInstance("test", listener);
+        ParticleEmittersManager.spawnEmitters(new CountingEmitter());
+        ParticleEmittersManager.spawnEmitters(new CountingEmitter());
+
+        ParticleEmittersManager.clear();
+
+        assertEquals(2, listener.serverRemovals);
+        assertEquals(0, listener.clientRemovals);
+    }
+
+    @Test
+    void clearClientShouldPublishRemoveEventForEveryClientEmitter() {
+        ClientLevel clientWorld = UnsafeAllocator.allocate(ClientLevel.class);
+        RemoveListener listener = new RemoveListener();
+        ReiEventBus.INSTANCE.registerListenerInstance("test", listener);
+        CountingEmitter first = new CountingEmitter();
+        CountingEmitter second = new CountingEmitter();
+        first.setUuid(UUID.randomUUID());
+        second.setUuid(UUID.randomUUID());
+        ParticleEmittersManager.createOrChangeClient(first, clientWorld);
+        ParticleEmittersManager.createOrChangeClient(second, clientWorld);
+
+        ParticleEmittersManager.clearClient();
+
+        assertEquals(0, listener.serverRemovals);
+        assertEquals(2, listener.clientRemovals);
+        assertTrue(ParticleEmittersManager.getClientEmitters().isEmpty());
+    }
+
     private static final class CountingEmitter extends ParticleEmitters {
         private int emittedTicks;
 
@@ -137,6 +188,20 @@ class ParticleEmittersManagerTest {
         @Override
         protected void emitTick() {
             throw new IllegalStateException("boom");
+        }
+    }
+
+    private static final class RemoveListener {
+        private int serverRemovals;
+        private int clientRemovals;
+
+        @EventHandler
+        public void onRemove(EmitterRemoveEvent event) {
+            if (event.isClientSide()) {
+                clientRemovals++;
+                return;
+            }
+            serverRemovals++;
         }
     }
 }

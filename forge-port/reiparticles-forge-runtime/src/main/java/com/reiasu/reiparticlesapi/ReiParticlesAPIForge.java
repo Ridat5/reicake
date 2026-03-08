@@ -14,6 +14,7 @@ import com.reiasu.reiparticlesapi.event.ReiEventBus;
 import com.reiasu.reiparticlesapi.event.events.server.ServerPostTickEvent;
 import com.reiasu.reiparticlesapi.event.events.server.ServerPreTickEvent;
 import com.reiasu.reiparticlesapi.network.ForgeReiParticlesNetwork;
+import com.reiasu.reiparticlesapi.network.ServerSyncPacketBudget;
 import com.reiasu.reiparticlesapi.network.animation.PathMotionManager;
 import com.reiasu.reiparticlesapi.network.particle.composition.manager.ParticleCompositionManager;
 import com.reiasu.reiparticlesapi.network.particle.emitters.ParticleEmittersManager;
@@ -150,6 +151,7 @@ public final class ReiParticlesAPIForge {
     }
 
     private void onServerEndTick(net.minecraft.server.MinecraftServer server) {
+        ServerSyncPacketBudget.beginServerTick(server.getTickCount());
         safeTick("AnimateManager.server", () -> AnimateManager.INSTANCE.tickServer());
         safeTick("ParticleEmittersManager.server", ParticleEmittersManager::tickAll);
         safeTick("DisplayEntityManager.server", () -> DisplayEntityManager.INSTANCE.tickAll());
@@ -194,3 +196,5 @@ public final class ReiParticlesAPIForge {
         LOGGER.info("Registered ReiParticlesAPI particle providers (7 types)");
     }
 }
+
+

@@ -11,6 +11,7 @@ import com.reiasu.reiparticlesapi.network.particle.emitters.ParticleEmitters;
 import com.reiasu.reiparticlesapi.network.particle.emitters.ParticleEmittersManager;
 import com.reiasu.reiparticlesapi.network.particle.style.ParticleGroupStyle;
 import com.reiasu.reiparticlesapi.network.particle.style.ParticleStyleManager;
+import com.reiasu.reiparticlesapi.particles.Controllable;
 import com.reiasu.reiparticlesapi.particles.control.group.ClientParticleGroupManager;
 import com.reiasu.reiparticlesapi.particles.control.group.ControllableParticleGroup;
 import com.reiasu.reiparticlesapi.renderer.RenderEntity;
@@ -24,6 +25,7 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.UUID;
 
@@ -48,10 +50,10 @@ class ClientWorldStateResetTest {
         DummyStyle style = new DummyStyle();
         DummyRenderEntity renderEntity = new DummyRenderEntity();
         DummyParticleGroup group = new DummyParticleGroup();
-        DummyComposition composition = new DummyComposition(Vec3.ZERO, null);
+        TrackingComposition composition = new TrackingComposition(allocateClientLevel());
         DummyEmitter emitter = new DummyEmitter();
         emitter.setUuid(UUID.randomUUID());
-        ClientLevel clientWorld = UnsafeAllocator.allocate(ClientLevel.class);
+        ClientLevel clientWorld = allocateClientLevel();
 
         DisplayEntityManager.INSTANCE.addClient(display);
         ParticleStyleManager.getClientViewStyles().put(style.getUuid(), style);
@@ -61,6 +63,7 @@ class ClientWorldStateResetTest {
         ParticleEmittersManager.createOrChangeClient(emitter, clientWorld);
 
         assertFalse(emitter.getCanceled());
+        assertFalse(composition.handle.removed);
 
         ClientWorldStateReset.reset();
 
@@ -71,6 +74,23 @@ class ClientWorldStateResetTest {
         assertTrue(ClientRenderEntityManager.INSTANCE.getEntities().isEmpty());
         assertNull(ClientParticleGroupManager.INSTANCE.getControlGroup(group.getUuid()));
         assertTrue(ParticleCompositionManager.INSTANCE.getClientView().isEmpty());
+        assertTrue(composition.handle.removed);
+    }
+
+    private static ClientLevel allocateClientLevel() {
+        ClientLevel clientLevel = UnsafeAllocator.allocate(ClientLevel.class);
+        setBooleanField(Level.class, clientLevel, "isClientSide", true);
+        return clientLevel;
+    }
+
+    private static void setBooleanField(Class<?> owner, Object target, String fieldName, boolean value) {
+        try {
+            Field field = owner.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.setBoolean(target, value);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to set field " + fieldName, e);
+        }
     }
 
     private static final class DummyDisplay extends DisplayEntity {
@@ -121,18 +141,62 @@ class ClientWorldStateResetTest {
         }
     }
 
-    private static final class DummyComposition extends ParticleComposition {
-        DummyComposition(Vec3 position, Level world) {
-            super(position, world);
+    private static final class TrackingComposition extends ParticleComposition {
+        private final TrackingControllable handle = new TrackingControllable();
+        private final CompositionData data = new CompositionData()
+                .setDisplayerBuilder(() -> (loc, world) -> handle);
+
+        TrackingComposition(Level world) {
+            super(Vec3.ZERO, world);
         }
 
         @Override
         public Map<CompositionData, RelativeLocation> getParticles() {
-            return Map.of();
+            return Map.of(data, new RelativeLocation(0.0, 0.0, 0.0));
         }
 
         @Override
         public void onDisplay() {
+        }
+    }
+
+    private static final class TrackingControllable implements Controllable<TrackingControllable> {
+        private final UUID uuid = UUID.randomUUID();
+        private boolean removed;
+
+        @Override
+        public UUID controlUUID() {
+            return uuid;
+        }
+
+        @Override
+        public void rotateToPoint(RelativeLocation to) {
+        }
+
+        @Override
+        public void rotateToWithAngle(RelativeLocation to, double radian) {
+        }
+
+        @Override
+        public void rotateAsAxis(double radian) {
+        }
+
+        @Override
+        public void teleportTo(Vec3 pos) {
+        }
+
+        @Override
+        public void teleportTo(double x, double y, double z) {
+        }
+
+        @Override
+        public void remove() {
+            removed = true;
+        }
+
+        @Override
+        public TrackingControllable getControlObject() {
+            return this;
         }
     }
 

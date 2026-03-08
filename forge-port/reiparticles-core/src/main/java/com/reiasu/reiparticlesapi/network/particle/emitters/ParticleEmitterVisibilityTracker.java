@@ -4,6 +4,7 @@ package com.reiasu.reiparticlesapi.network.particle.emitters;
 
 import com.reiasu.reiparticlesapi.config.APIConfig;
 import com.reiasu.reiparticlesapi.network.ReiParticlesNetwork;
+import com.reiasu.reiparticlesapi.network.ServerSyncPacketBudget;
 import com.reiasu.reiparticlesapi.network.packet.PacketParticleEmittersS2C;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -14,14 +15,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 final class ParticleEmitterVisibilityTracker {
     private static final int PLAYER_SHARD_COUNT = 4;
 
     private final Map<UUID, Set<UUID>> visible = new ConcurrentHashMap<>();
-    private final AtomicInteger packetsThisTick = new AtomicInteger(0);
     private long visibilityTick;
     private int statSynced;
     private int statSkippedLod;
@@ -35,7 +34,6 @@ final class ParticleEmitterVisibilityTracker {
         statSkippedLod = 0;
         statSkippedShard = 0;
         statThrottled = 0;
-        packetsThisTick.set(0);
         return visibilityTick++;
     }
 
@@ -51,6 +49,8 @@ final class ParticleEmitterVisibilityTracker {
         if (!(emitters.level() instanceof ServerLevel level)) {
             return;
         }
+        beginSharedBudget(level);
+        EncodedEmitterPackets packets = EncodedEmitterPackets.create(emitters);
 
         List<ServerPlayer> players = level.players();
         for (int i = 0; i < players.size(); i++) {
@@ -64,11 +64,11 @@ final class ParticleEmitterVisibilityTracker {
             boolean isViewing = visibleSet.contains(emitters.getUuid());
 
             if (shouldView && !isViewing) {
-                addView(player, emitters);
+                addView(player, emitters, packets);
                 continue;
             }
             if (!shouldView && isViewing) {
-                removeView(player, emitters);
+                removeView(player, emitters, packets);
                 continue;
             }
             if (shouldView) {
@@ -78,7 +78,7 @@ final class ParticleEmitterVisibilityTracker {
                     statSkippedLod++;
                     continue;
                 }
-                sendChange(emitters, player);
+                sendChange(packets, player);
             }
         }
     }
@@ -123,25 +123,16 @@ final class ParticleEmitterVisibilityTracker {
 
     void removeAllViews(ParticleEmitters emitters) {
         ServerLevel level = emitters.level() instanceof ServerLevel serverLevel ? serverLevel : null;
+        EncodedEmitterPackets packets = EncodedEmitterPackets.create(emitters);
         for (Map.Entry<UUID, Set<UUID>> entry : visible.entrySet()) {
             Set<UUID> visibleSet = entry.getValue();
-            if (!visibleSet.remove(emitters.getUuid()) || level == null) {
+            if (!visibleSet.remove(emitters.getUuid()) || level == null || packets == null) {
                 continue;
             }
             ServerPlayer player = level.getServer().getPlayerList().getPlayer(entry.getKey());
-            if (player == null) {
-                continue;
+            if (player != null) {
+                ReiParticlesNetwork.sendTo(player, packets.removePacket());
             }
-            ResourceLocation key = emitters.getEmittersID();
-            if (key == null || EmitterRegistry.INSTANCE.getDecoder(key) == null) {
-                continue;
-            }
-            PacketParticleEmittersS2C packet = new PacketParticleEmittersS2C(
-                    key,
-                    emitters.encodeToBytes(),
-                    PacketParticleEmittersS2C.PacketType.REMOVE
-            );
-            ReiParticlesNetwork.sendTo(player, packet);
         }
     }
 
@@ -172,45 +163,89 @@ final class ParticleEmitterVisibilityTracker {
         statSkippedShard = 0;
         statThrottled = 0;
         lastTickStats = new int[4];
-        packetsThisTick.set(0);
     }
 
-    private boolean sendChange(ParticleEmitters emitters, ServerPlayer player) {
-        ResourceLocation key = emitters.getEmittersID();
-        if (key == null || EmitterRegistry.INSTANCE.getDecoder(key) == null) {
+    private boolean sendChange(EncodedEmitterPackets packets, ServerPlayer player) {
+        if (packets == null) {
             return false;
         }
-        if (packetsThisTick.incrementAndGet() > APIConfig.INSTANCE.getPacketsPerTickLimit()) {
+        if (!ServerSyncPacketBudget.tryAcquire()) {
             statThrottled++;
             return false;
         }
-        PacketParticleEmittersS2C packet = new PacketParticleEmittersS2C(
-                key,
-                emitters.encodeToBytes(),
-                PacketParticleEmittersS2C.PacketType.CHANGE_OR_CREATE
-        );
         statSynced++;
-        ReiParticlesNetwork.sendTo(player, packet);
+        ReiParticlesNetwork.sendTo(player, packets.changePacket());
         return true;
     }
 
-    private void addView(ServerPlayer player, ParticleEmitters emitters) {
+    private void addView(ServerPlayer player, ParticleEmitters emitters, EncodedEmitterPackets packets) {
         Set<UUID> visibleSet = visible.computeIfAbsent(player.getUUID(), ignored -> ConcurrentHashMap.newKeySet());
-        markVisibleAfterSuccessfulSend(visibleSet, emitters.getUuid(), () -> sendChange(emitters, player));
+        markVisibleAfterSuccessfulSend(visibleSet, emitters.getUuid(), () -> sendChange(packets, player));
     }
 
-    private void removeView(ServerPlayer player, ParticleEmitters emitters) {
+    private void removeView(ServerPlayer player, ParticleEmitters emitters, EncodedEmitterPackets packets) {
         Set<UUID> visibleSet = visible.computeIfAbsent(player.getUUID(), ignored -> ConcurrentHashMap.newKeySet());
         visibleSet.remove(emitters.getUuid());
-        ResourceLocation key = emitters.getEmittersID();
-        if (key == null || EmitterRegistry.INSTANCE.getDecoder(key) == null) {
+        if (packets != null) {
+            ReiParticlesNetwork.sendTo(player, packets.removePacket());
+        }
+    }
+
+    private static void beginSharedBudget(ServerLevel level) {
+        if (level.getServer() != null) {
+            ServerSyncPacketBudget.beginServerTick(level.getServer().getTickCount());
             return;
         }
-        PacketParticleEmittersS2C packet = new PacketParticleEmittersS2C(
-                key,
-                emitters.encodeToBytes(),
-                PacketParticleEmittersS2C.PacketType.REMOVE
-        );
-        ReiParticlesNetwork.sendTo(player, packet);
+        ServerSyncPacketBudget.beginServerTick(level.getGameTime());
+    }
+
+    private static final class EncodedEmitterPackets {
+        private final ParticleEmitters emitters;
+        private final ResourceLocation emitterKey;
+        private byte[] payload;
+        private PacketParticleEmittersS2C changePacket;
+        private PacketParticleEmittersS2C removePacket;
+
+        private EncodedEmitterPackets(ParticleEmitters emitters, ResourceLocation emitterKey) {
+            this.emitters = emitters;
+            this.emitterKey = emitterKey;
+        }
+
+        private static EncodedEmitterPackets create(ParticleEmitters emitters) {
+            ResourceLocation key = emitters.getEmittersID();
+            if (key == null || EmitterRegistry.INSTANCE.getDecoder(key) == null) {
+                return null;
+            }
+            return new EncodedEmitterPackets(emitters, key);
+        }
+
+        private PacketParticleEmittersS2C changePacket() {
+            if (changePacket == null) {
+                changePacket = new PacketParticleEmittersS2C(
+                        emitterKey,
+                        payload(),
+                        PacketParticleEmittersS2C.PacketType.CHANGE_OR_CREATE
+                );
+            }
+            return changePacket;
+        }
+
+        private PacketParticleEmittersS2C removePacket() {
+            if (removePacket == null) {
+                removePacket = new PacketParticleEmittersS2C(
+                        emitterKey,
+                        payload(),
+                        PacketParticleEmittersS2C.PacketType.REMOVE
+                );
+            }
+            return removePacket;
+        }
+
+        private byte[] payload() {
+            if (payload == null) {
+                payload = emitters.encodeToBytes();
+            }
+            return payload;
+        }
     }
 }

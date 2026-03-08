@@ -3,9 +3,9 @@
 package com.reiasu.reiparticlesapi.renderer.server;
 
 import com.mojang.logging.LogUtils;
-import com.reiasu.reiparticlesapi.config.APIConfig;
 import com.reiasu.reiparticlesapi.network.ReiParticlesNetwork;
 import com.reiasu.reiparticlesapi.network.packet.PacketRenderEntityS2C;
+import com.reiasu.reiparticlesapi.network.ServerSyncPacketBudget;
 import com.reiasu.reiparticlesapi.renderer.RenderEntity;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -32,7 +32,6 @@ public final class ServerRenderEntityManager {
     private final HashMap<UUID, RenderEntity> entities = new HashMap<>();
     private final HashMap<UUID, HashSet<RenderEntity>> playerViewable = new HashMap<>();
     private long visibilityTick;
-    private int packetsThisTick;
 
     private ServerRenderEntityManager() {
     }
@@ -91,6 +90,7 @@ public final class ServerRenderEntityManager {
         if (server == null) {
             return;
         }
+        ServerSyncPacketBudget.beginServerTick(server.getTickCount());
         pruneDisconnectedPlayers(server);
         long tick = beginVisibilityTick();
 
@@ -187,7 +187,6 @@ public final class ServerRenderEntityManager {
     }
 
     private long beginVisibilityTick() {
-        packetsThisTick = 0;
         return visibilityTick++;
     }
 
@@ -200,7 +199,7 @@ public final class ServerRenderEntityManager {
     }
 
     private boolean trySendPacket(ServerPlayer player, PacketRenderEntityS2C packet) {
-        if (++packetsThisTick > APIConfig.INSTANCE.getPacketsPerTickLimit()) {
+        if (!ServerSyncPacketBudget.tryAcquire()) {
             return false;
         }
         ReiParticlesNetwork.sendTo(player, packet);
@@ -242,3 +241,4 @@ public final class ServerRenderEntityManager {
         });
     }
 }
+

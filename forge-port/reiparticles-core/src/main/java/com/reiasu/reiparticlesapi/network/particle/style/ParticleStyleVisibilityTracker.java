@@ -2,8 +2,8 @@
 // Copyright (C) 2025 Reiasu
 package com.reiasu.reiparticlesapi.network.particle.style;
 
-import com.reiasu.reiparticlesapi.config.APIConfig;
 import com.reiasu.reiparticlesapi.network.ReiParticlesNetwork;
+import com.reiasu.reiparticlesapi.network.ServerSyncPacketBudget;
 import com.reiasu.reiparticlesapi.network.packet.PacketParticleStyleS2C;
 import com.reiasu.reiparticlesapi.particles.control.ControlType;
 import net.minecraft.server.level.ServerLevel;
@@ -13,14 +13,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 final class ParticleStyleVisibilityTracker {
     private static final int PLAYER_SHARD_COUNT = 4;
 
     private final Map<UUID, Set<UUID>> visible;
-    private final AtomicInteger packetsThisTick = new AtomicInteger(0);
     private long visibilityTick;
     private int statSynced;
     private int statSkippedLod;
@@ -38,7 +36,6 @@ final class ParticleStyleVisibilityTracker {
         statSkippedLod = 0;
         statSkippedShard = 0;
         statThrottled = 0;
-        packetsThisTick.set(0);
         return visibilityTick++;
     }
 
@@ -46,6 +43,7 @@ final class ParticleStyleVisibilityTracker {
                              ServerLevel level,
                              long tick,
                              PacketParticleStyleS2C dirtyPacket) {
+        beginSharedBudget(level);
         java.util.List<ServerPlayer> players = level.players();
         for (int i = 0; i < players.size(); i++) {
             if (!shouldProcessPlayerIndex(i, tick)) {
@@ -78,7 +76,6 @@ final class ParticleStyleVisibilityTracker {
     }
 
     void clear() {
-        packetsThisTick.set(0);
         visibilityTick = 0L;
         statSynced = 0;
         statSkippedLod = 0;
@@ -142,12 +139,20 @@ final class ParticleStyleVisibilityTracker {
         if (packet == null) {
             return false;
         }
-        if (packetsThisTick.incrementAndGet() > APIConfig.INSTANCE.getPacketsPerTickLimit()) {
+        if (!ServerSyncPacketBudget.tryAcquire()) {
             statThrottled++;
             return false;
         }
         statSynced++;
         ReiParticlesNetwork.sendTo(player, packet);
         return true;
+    }
+
+    private static void beginSharedBudget(ServerLevel level) {
+        if (level.getServer() != null) {
+            ServerSyncPacketBudget.beginServerTick(level.getServer().getTickCount());
+            return;
+        }
+        ServerSyncPacketBudget.beginServerTick(level.getGameTime());
     }
 }

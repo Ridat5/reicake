@@ -9,46 +9,23 @@ package com.reiasu.reiparticlesapi.config;
 public final class APIConfig {
     public static final APIConfig INSTANCE = new APIConfig();
 
-    private volatile boolean enabledParticleCountInject = true;
-    private volatile boolean enabledParticleAsync = true;
     private volatile int particleCountLimit = 131072;
-    private volatile int calculateThreadCount = 4;
     private volatile int packetsPerTickLimit = 512;
     private volatile int maxEmitterVisibleRange = 256;
 
     private APIConfig() {
     }
 
-    public boolean isEnabledParticleCountInject() {
-        return enabledParticleCountInject;
-    }
-
-    public void setEnabledParticleCountInject(boolean enabledParticleCountInject) {
-        this.enabledParticleCountInject = enabledParticleCountInject;
-    }
-
-    public boolean isEnabledParticleAsync() {
-        return enabledParticleAsync;
-    }
-
-    public void setEnabledParticleAsync(boolean enabledParticleAsync) {
-        this.enabledParticleAsync = enabledParticleAsync;
-    }
-
+    /**
+     * Legacy config key retained for compatibility.
+     * The runtime currently applies this as a cap on active emitters.
+     */
     public int getParticleCountLimit() {
         return particleCountLimit;
     }
 
     public void setParticleCountLimit(int particleCountLimit) {
         this.particleCountLimit = Math.max(1, particleCountLimit);
-    }
-
-    public int getCalculateThreadCount() {
-        return calculateThreadCount;
-    }
-
-    public void setCalculateThreadCount(int calculateThreadCount) {
-        this.calculateThreadCount = Math.max(1, calculateThreadCount);
     }
 
     public int getPacketsPerTickLimit() {

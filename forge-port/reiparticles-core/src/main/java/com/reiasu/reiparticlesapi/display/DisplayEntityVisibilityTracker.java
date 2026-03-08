@@ -2,8 +2,8 @@
 // Copyright (C) 2025 Reiasu
 package com.reiasu.reiparticlesapi.display;
 
-import com.reiasu.reiparticlesapi.config.APIConfig;
 import com.reiasu.reiparticlesapi.network.ReiParticlesNetwork;
+import com.reiasu.reiparticlesapi.network.ServerSyncPacketBudget;
 import com.reiasu.reiparticlesapi.network.packet.PacketDisplayEntityS2C;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -14,14 +14,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 final class DisplayEntityVisibilityTracker {
     private static final int PLAYER_SHARD_COUNT = 4;
 
     private final Map<UUID, Set<UUID>> visible;
-    private final AtomicInteger packetsThisTick = new AtomicInteger(0);
     private long visibilityTick;
     private int statSynced;
     private int statSkippedShard;
@@ -37,7 +35,6 @@ final class DisplayEntityVisibilityTracker {
         statSynced = 0;
         statSkippedShard = 0;
         statThrottled = 0;
-        packetsThisTick.set(0);
         return visibilityTick++;
     }
 
@@ -49,6 +46,7 @@ final class DisplayEntityVisibilityTracker {
                                 ServerLevel level,
                                 long tick,
                                 PacketDisplayEntityS2C dirtyPacket) {
+        beginSharedBudget(level);
         boolean dirtyPacketFullySynced = true;
         List<ServerPlayer> players = level.players();
         for (int i = 0; i < players.size(); i++) {
@@ -111,7 +109,6 @@ final class DisplayEntityVisibilityTracker {
 
     void clear() {
         visible.clear();
-        packetsThisTick.set(0);
         visibilityTick = 0L;
         statSynced = 0;
         statSkippedShard = 0;
@@ -166,7 +163,7 @@ final class DisplayEntityVisibilityTracker {
         if (packet == null) {
             return false;
         }
-        if (packetsThisTick.incrementAndGet() > APIConfig.INSTANCE.getPacketsPerTickLimit()) {
+        if (!ServerSyncPacketBudget.tryAcquire()) {
             statThrottled++;
             return false;
         }
@@ -177,5 +174,13 @@ final class DisplayEntityVisibilityTracker {
 
     private static boolean hasSyncType(DisplayEntity entity) {
         return entity != null && entity.typeId() != null && !entity.typeId().isBlank();
+    }
+
+    private static void beginSharedBudget(ServerLevel level) {
+        if (level.getServer() != null) {
+            ServerSyncPacketBudget.beginServerTick(level.getServer().getTickCount());
+            return;
+        }
+        ServerSyncPacketBudget.beginServerTick(level.getGameTime());
     }
 }

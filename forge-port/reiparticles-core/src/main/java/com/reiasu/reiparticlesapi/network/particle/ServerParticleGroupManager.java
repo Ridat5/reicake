@@ -3,8 +3,8 @@
 package com.reiasu.reiparticlesapi.network.particle;
 
 import com.mojang.logging.LogUtils;
-import com.reiasu.reiparticlesapi.config.APIConfig;
 import com.reiasu.reiparticlesapi.network.ReiParticlesNetwork;
+import com.reiasu.reiparticlesapi.network.ServerSyncPacketBudget;
 import com.reiasu.reiparticlesapi.network.buffer.ParticleControllerDataBuffer;
 import com.reiasu.reiparticlesapi.network.buffer.ParticleControllerDataBuffers;
 import com.reiasu.reiparticlesapi.network.packet.PacketParticleGroupS2C;
@@ -38,7 +38,6 @@ public final class ServerParticleGroupManager {
     private final ConcurrentHashMap<UUID, ServerParticleGroup> groups = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Set<ServerParticleGroup>> visible = new ConcurrentHashMap<>();
     private long visibilityTick;
-    private int packetsThisTick;
 
     private ServerParticleGroupManager() {
     }
@@ -105,6 +104,7 @@ public final class ServerParticleGroupManager {
         if (server == null) {
             return;
         }
+        ServerSyncPacketBudget.beginServerTick(server.getTickCount());
         clearOfflineVisible(server);
         long tick = beginVisibilityTick();
 
@@ -213,7 +213,6 @@ public final class ServerParticleGroupManager {
     }
 
     private long beginVisibilityTick() {
-        packetsThisTick = 0;
         return visibilityTick++;
     }
 
@@ -261,7 +260,7 @@ public final class ServerParticleGroupManager {
     }
 
     private boolean trySendPacket(ServerPlayer target, PacketParticleGroupS2C packet) {
-        if (++packetsThisTick > APIConfig.INSTANCE.getPacketsPerTickLimit()) {
+        if (!ServerSyncPacketBudget.tryAcquire()) {
             return false;
         }
         ReiParticlesNetwork.sendTo(target, packet);

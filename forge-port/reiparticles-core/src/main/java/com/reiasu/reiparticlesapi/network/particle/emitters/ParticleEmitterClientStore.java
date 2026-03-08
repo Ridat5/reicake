@@ -56,7 +56,7 @@ final class ParticleEmitterClientStore {
             if (!emitters.getCanceled()) {
                 continue;
             }
-            ReiEventBus.call(new EmitterRemoveEvent(emitters, true));
+            removeClientEmitter(emitters);
             iterator.remove();
         }
     }
@@ -71,8 +71,16 @@ final class ParticleEmitterClientStore {
 
     void clear() {
         for (ParticleEmitters emitter : clientEmitters.values()) {
-            emitter.cancel();
+            removeClientEmitter(emitter);
         }
         clientEmitters.clear();
+    }
+
+    private void removeClientEmitter(ParticleEmitters emitters) {
+        if (emitters == null) {
+            return;
+        }
+        emitters.cancel();
+        ReiEventBus.call(new EmitterRemoveEvent(emitters, true));
     }
 }
