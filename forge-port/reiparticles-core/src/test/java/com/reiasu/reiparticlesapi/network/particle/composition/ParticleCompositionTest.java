@@ -2,16 +2,22 @@
 // Copyright (C) 2025 Reiasu
 package com.reiasu.reiparticlesapi.network.particle.composition;
 
+import com.reiasu.reiparticlesapi.particles.Controllable;
+import com.reiasu.reiparticlesapi.testutil.UnsafeAllocator;
 import com.reiasu.reiparticlesapi.utils.RelativeLocation;
 import io.netty.buffer.Unpooled;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -83,6 +89,18 @@ class ParticleCompositionTest {
     }
 
     @Test
+    void shouldCopyScaleOnUpdate() {
+        TrackingComposition current = new TrackingComposition();
+        TrackingComposition incoming = new TrackingComposition();
+        current.setScale(1.0);
+        incoming.setScale(2.5);
+
+        current.update(incoming);
+
+        assertEquals(2.5, current.getScale(), 1.0E-6);
+    }
+
+    @Test
     void shouldRejectSequencedParticleStatusAtCountBoundary() {
         TrackingSequencedComposition composition = new TrackingSequencedComposition();
         composition.setCount(1);
@@ -91,6 +109,35 @@ class ParticleCompositionTest {
 
         assertTrue(composition.isParticleDisplayed(0));
         assertFalse(composition.isParticleDisplayed(1));
+    }
+
+    @Test
+    void sequencedUpdateShouldRefreshDisplayedTransform() {
+        ClientLevel clientWorld = allocateClientLevel();
+        TrackingControllable handle = new TrackingControllable();
+        TrackingSequencedComposition current = new TrackingSequencedComposition(Vec3.ZERO, clientWorld, handle);
+        current.display();
+        current.addSingle();
+
+        assertEquals(new Vec3(3.0, 0.0, 0.0), handle.spawnPosition);
+        assertEquals(1, handle.displayCalls);
+
+        TrackingSequencedComposition incoming = new TrackingSequencedComposition(
+                new Vec3(10.0, 0.0, 0.0),
+                clientWorld,
+                new TrackingControllable()
+        );
+        incoming.setScale(2.0);
+        incoming.setCount(1);
+        incoming.setDisplayedParticleCount(1);
+        incoming.setParticleStatus(0, true);
+
+        current.update(incoming);
+
+        assertEquals(2.0, current.getScale(), 1.0E-6);
+        assertEquals(new Vec3(16.0, 0.0, 0.0), handle.lastTeleport);
+        assertEquals(1, handle.displayCalls);
+        assertFalse(handle.removed);
     }
 
     @Test
@@ -131,6 +178,22 @@ class ParticleCompositionTest {
         assertEquals(3.0, composition.getParticles().get(data).length(), 1.0E-6);
     }
 
+    private static ClientLevel allocateClientLevel() {
+        ClientLevel clientLevel = UnsafeAllocator.allocate(ClientLevel.class);
+        setBooleanField(Level.class, clientLevel, "isClientSide", true);
+        return clientLevel;
+    }
+
+    private static void setBooleanField(Class<?> owner, Object target, String fieldName, boolean value) {
+        try {
+            Field field = owner.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.setBoolean(target, value);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to set field " + fieldName, e);
+        }
+    }
+
     private static final class TrackingComposition extends ParticleComposition {
         private final Map<CompositionData, RelativeLocation> locations = new LinkedHashMap<>();
         private int onDisplayCalls;
@@ -147,17 +210,76 @@ class ParticleCompositionTest {
     }
 
     private static final class TrackingSequencedComposition extends SequencedParticleComposition {
+        private final SortedMap<CompositionData, RelativeLocation> locations = new TreeMap<>();
+
         private TrackingSequencedComposition() {
             super(Vec3.ZERO, null);
         }
 
+        private TrackingSequencedComposition(Vec3 position, Level world, TrackingControllable handle) {
+            super(position, world);
+            CompositionData data = new CompositionData()
+                    .setDisplayerBuilder(() -> (loc, clientWorld) -> {
+                        handle.displayCalls++;
+                        handle.spawnPosition = loc;
+                        return handle;
+                    });
+            data.setOrder(0);
+            locations.put(data, new RelativeLocation(3.0, 0.0, 0.0));
+        }
+
         @Override
         public SortedMap<CompositionData, RelativeLocation> getParticleSequenced() {
-            return new TreeMap<>();
+            return locations;
         }
 
         @Override
         public void onDisplay() {
+        }
+    }
+
+    private static final class TrackingControllable implements Controllable<TrackingControllable> {
+        private final UUID uuid = UUID.randomUUID();
+        private Vec3 spawnPosition;
+        private Vec3 lastTeleport;
+        private int displayCalls;
+        private boolean removed;
+
+        @Override
+        public UUID controlUUID() {
+            return uuid;
+        }
+
+        @Override
+        public void rotateToPoint(RelativeLocation to) {
+        }
+
+        @Override
+        public void rotateToWithAngle(RelativeLocation to, double radian) {
+        }
+
+        @Override
+        public void rotateAsAxis(double radian) {
+        }
+
+        @Override
+        public void teleportTo(Vec3 pos) {
+            lastTeleport = pos;
+        }
+
+        @Override
+        public void teleportTo(double x, double y, double z) {
+            teleportTo(new Vec3(x, y, z));
+        }
+
+        @Override
+        public void remove() {
+            removed = true;
+        }
+
+        @Override
+        public TrackingControllable getControlObject() {
+            return this;
         }
     }
 }
